@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import sys
 from pathlib import Path
+from subprocess import CompletedProcess
 from types import ModuleType
 
 PROJECT_ROOT = Path(__file__).parents[3]
@@ -20,6 +22,7 @@ def _load_script(name: str) -> ModuleType:
 
 change_set = _load_script("change_set")
 codex_hook = _load_script("codex_hook")
+hook_manager = _load_script("hook_manager")
 
 
 def test_public_runtime_change_requires_tests_docs_and_release_note() -> None:
@@ -103,3 +106,81 @@ def test_codex_hook_detects_commit_commands() -> None:
 
 def test_codex_hook_detects_compound_stage_and_commit() -> None:
     assert codex_hook.STAGE_PATTERN.search("git add src && git commit -m test")
+
+
+def test_codex_hook_audit_does_not_store_prompt_or_command(
+    tmp_path: Path,
+    monkeypatch: object,
+    capsys: object,
+) -> None:
+    audit_path = tmp_path / "hook-events.jsonl"
+    monkeypatch.setattr(codex_hook, "AUDIT_PATH", audit_path)  # type: ignore[attr-defined]
+
+    assert (
+        codex_hook.pre_tool_use(
+            {
+                "session_id": "session-1",
+                "tool_name": "functions.exec_command",
+                "prompt": "private user request",
+                "tool_input": {"cmd": "echo private-command"},
+            }
+        )
+        == 0
+    )
+    capsys.readouterr()  # type: ignore[attr-defined]
+
+    text = audit_path.read_text(encoding="utf-8")
+    event = json.loads(text)
+    assert event["event"] == "PreToolUse"
+    assert event["outcome"] == "not-applicable"
+    assert event["session_id"] == "session-1"
+    assert "private user request" not in text
+    assert "private-command" not in text
+
+
+def test_codex_hook_denies_commit_without_current_receipt(
+    tmp_path: Path,
+    monkeypatch: object,
+    capsys: object,
+) -> None:
+    monkeypatch.setattr(codex_hook, "AUDIT_PATH", tmp_path / "events.jsonl")  # type: ignore[attr-defined]
+    monkeypatch.setattr(  # type: ignore[attr-defined]
+        codex_hook.change_set,
+        "changed_paths",
+        lambda *, staged: ("src/gaia/api/app.py",),
+    )
+    monkeypatch.setattr(  # type: ignore[attr-defined]
+        codex_hook.subprocess,
+        "run",
+        lambda *args, **kwargs: CompletedProcess(
+            args=args,
+            returncode=1,
+            stdout="",
+            stderr="No staged verification receipt.",
+        ),
+    )
+
+    assert (
+        codex_hook.pre_tool_use(
+            {
+                "session_id": "session-2",
+                "hook_event_name": "PreToolUse",
+                "tool_input": {"cmd": "git commit -m test"},
+            }
+        )
+        == 0
+    )
+    response = json.loads(capsys.readouterr().out)  # type: ignore[attr-defined]
+
+    output = response["hookSpecificOutput"]
+    assert output["permissionDecision"] == "deny"
+    assert "No staged verification receipt" in output["permissionDecisionReason"]
+
+
+def test_workspace_forwarding_config_targets_gaia_hook() -> None:
+    config = hook_manager.codex_config(PROJECT_ROOT)
+
+    session_command = config["hooks"]["SessionStart"][0]["hooks"][0]["command"]
+    matcher = config["hooks"]["PreToolUse"][0]["matcher"]
+    assert str(PROJECT_ROOT / "scripts" / "codex_hook.py") in session_command
+    assert "functions\\.exec_command" in matcher

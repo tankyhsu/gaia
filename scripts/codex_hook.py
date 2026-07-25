@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
 import sys
@@ -11,8 +12,21 @@ from typing import Any
 
 import change_set
 
+try:
+    from datetime import UTC, datetime
+except ImportError:  # Python 3.9 is still the macOS system default.
+    from datetime import datetime, timezone
+
+    UTC = timezone.utc  # noqa: UP017 - datetime.UTC does not exist on Python 3.9.
+
 ROOT = Path(__file__).parents[1]
 SESSION_DIR = change_set.git_dir() / "gaia" / "sessions"
+AUDIT_PATH = Path(
+    os.environ.get(
+        "GAIA_HOOK_AUDIT_PATH",
+        str(change_set.git_dir() / "gaia" / "hook-events.jsonl"),
+    )
+)
 COMMIT_PATTERN = re.compile(r"(?:^|[;&|]\s*)(?:/usr/bin/)?git(?:\s+-C\s+\S+)?\s+commit\b")
 STAGE_PATTERN = re.compile(r"(?:^|[;&|]\s*)(?:/usr/bin/)?git(?:\s+-C\s+\S+)?\s+add\b")
 
@@ -35,6 +49,32 @@ def _read_event() -> dict[str, Any]:
 
 def _write(value: dict[str, Any]) -> None:
     print(json.dumps(value, ensure_ascii=False))
+
+
+def _audit(
+    name: str,
+    outcome: str,
+    event: dict[str, Any],
+    *,
+    detail: str | None = None,
+) -> None:
+    record = {
+        "timestamp": datetime.now(UTC).isoformat(),
+        "event": name,
+        "session_id": str(event.get("session_id", "unknown")),
+        "outcome": outcome,
+    }
+    source = event.get("source")
+    if isinstance(source, str) and source:
+        record["source"] = source
+    tool_name = event.get("tool_name")
+    if isinstance(tool_name, str) and tool_name:
+        record["tool_name"] = tool_name
+    if detail:
+        record["detail"] = detail[:500]
+    AUDIT_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with AUDIT_PATH.open("a", encoding="utf-8") as stream:
+        stream.write(json.dumps(record, ensure_ascii=False) + "\n")
 
 
 def _session_path(session_id: str) -> Path:
@@ -71,6 +111,7 @@ def _command(event: dict[str, Any]) -> str:
 
 def session_start(event: dict[str, Any]) -> int:
     _record_session_baseline(str(event.get("session_id", "unknown")))
+    _audit("SessionStart", "context-injected", event)
     _write(
         {
             "hookSpecificOutput": {
@@ -82,7 +123,8 @@ def session_start(event: dict[str, Any]) -> int:
     return 0
 
 
-def user_prompt_submit(_event: dict[str, Any]) -> int:
+def user_prompt_submit(event: dict[str, Any]) -> int:
+    _audit("UserPromptSubmit", "context-injected", event)
     _write(
         {
             "hookSpecificOutput": {
@@ -97,6 +139,7 @@ def user_prompt_submit(_event: dict[str, Any]) -> int:
 def pre_tool_use(event: dict[str, Any]) -> int:
     command = _command(event)
     if not COMMIT_PATTERN.search(command):
+        _audit("PreToolUse", "not-applicable", event)
         _write({})
         return 0
     staged_gaia = change_set.changed_paths(staged=True)
@@ -105,6 +148,7 @@ def pre_tool_use(event: dict[str, Any]) -> int:
         command,
     )
     if not staged_gaia and not commit_stages_files:
+        _audit("PreToolUse", "not-applicable", event)
         _write({})
         return 0
     if "--no-verify" in command:
@@ -118,9 +162,11 @@ def pre_tool_use(event: dict[str, Any]) -> int:
             text=True,
         )
         if completed.returncode == 0:
+            _audit("PreToolUse", "allowed", event, detail="verification receipt is current")
             _write({})
             return 0
         reason = completed.stderr.strip() or completed.stdout.strip()
+    _audit("PreToolUse", "denied", event, detail=reason)
     _write(
         {
             "hookSpecificOutput": {
@@ -136,6 +182,7 @@ def pre_tool_use(event: dict[str, Any]) -> int:
 def _stop(event: dict[str, Any]) -> int:
     session_id = str(event.get("session_id", "unknown"))
     if not _session_changed(session_id):
+        _audit(str(event.get("hook_event_name", "Stop")), "unchanged", event)
         _write({"continue": True})
         return 0
     completed = subprocess.run(
@@ -152,6 +199,7 @@ def _stop(event: dict[str, Any]) -> int:
     )
     if completed.returncode == 0:
         _record_session_baseline(session_id, replace=True)
+        _audit(str(event.get("hook_event_name", "Stop")), "verified", event)
         _write({"continue": True})
         return 0
     output = (completed.stderr + "\n" + completed.stdout).strip()
@@ -160,8 +208,15 @@ def _stop(event: dict[str, Any]) -> int:
         + output[-2200:]
     )
     if event.get("stop_hook_active"):
+        _audit(
+            str(event.get("hook_event_name", "Stop")),
+            "reported-after-retry",
+            event,
+            detail=reason,
+        )
         _write({"continue": True, "systemMessage": reason})
         return 0
+    _audit(str(event.get("hook_event_name", "Stop")), "blocked", event, detail=reason)
     _write({"decision": "block", "reason": reason})
     return 0
 
@@ -170,9 +225,10 @@ def main() -> int:
     if len(sys.argv) != 2:
         print("usage: codex_hook.py EVENT", file=sys.stderr)
         return 2
+    event: dict[str, Any] = {}
+    name = sys.argv[1]
     try:
         event = _read_event()
-        name = sys.argv[1]
         if name == "session-start":
             return session_start(event)
         if name == "user-prompt-submit":
@@ -186,6 +242,10 @@ def main() -> int:
         print(f"unknown hook event: {name}", file=sys.stderr)
         return 2
     except (OSError, ValueError, json.JSONDecodeError) as error:
+        try:
+            _audit(name, "error", event, detail=str(error))
+        except OSError:
+            pass
         print(f"GAIA_CODEX_HOOK_ERROR: {error}", file=sys.stderr)
         return 2
 

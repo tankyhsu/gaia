@@ -1,7 +1,7 @@
 PYTHON := uv run python
 PYTEST_MARKS := not postgres and not redis and not external
 
-.PHONY: setup change-start change-status agent-check change-ready lint test test-services \
+.PHONY: setup hooks-install hooks-status change-start change-status agent-check change-ready lint test test-services \
 	web-build web-test docs contracts package-smoke verify dev-api dev-console dev-docs \
 	infra-up infra-down
 
@@ -9,6 +9,12 @@ setup:
 	uv sync --locked --all-extras --all-groups
 	npm --prefix apps/web ci
 	npm --prefix apps/web exec playwright install chromium
+
+hooks-install:
+	$(PYTHON) scripts/hook_manager.py install --workspace-root "$(or $(WORKSPACE_ROOT),$(CURDIR))"
+
+hooks-status:
+	$(PYTHON) scripts/hook_manager.py status --workspace-root "$(or $(WORKSPACE_ROOT),$(CURDIR))"
 
 change-start:
 	@test -n "$(INTENT)" || (echo 'INTENT is required' && exit 2)

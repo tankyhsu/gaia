@@ -49,6 +49,17 @@ def test_quickstart_applies_template_once_and_then_closes(
         "knowledge",
         "approval",
     }
+    assert {
+        item["id"]: item["example"]["name"]
+        for item in initial.json()["templates"]
+    } == {
+        "basic": "简历阅读",
+        "knowledge": "员工手册",
+        "approval": "请假办理",
+    }
+    assert {
+        item["example"]["path"] for item in initial.json()["templates"]
+    } == {"/#resume", "/#handbook", "/#leave"}
     assert applied.status_code == 200
     assert applied.json()["restart_required"] is True
     assert "cache-redis" in applied.json()["starters"]

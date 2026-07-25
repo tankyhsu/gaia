@@ -11,9 +11,34 @@ Gaia 把一次完整变更定义为 Change Set：
 意图 + 行为契约 + 实现 + 测试 + 文档 + 生成物 + 发布影响
 ```
 
-Codex Hook 约束 Agent 的工作过程；GitHub Actions 在干净环境验证结果。二者不能互相替代。
+Codex Hook 约束 Agent 的工作过程，Git hooks 约束本地提交和推送，GitHub Actions 在干净环境
+验证结果。三者不能互相替代。
 
-## 2. Agent 生命周期
+## 2. Hook 安装与发现范围
+
+Codex 从任务启动目录发现 `.codex/hooks.json`，不会自动向子目录查找。因此每个 clone 至少执行：
+
+```bash
+make hooks-install
+```
+
+如果 Codex 任务从 Gaia 的父工作区启动，则执行：
+
+```bash
+make hooks-install WORKSPACE_ROOT=..
+```
+
+这会在父工作区生成只负责转发到 Gaia 的 Hook 配置，同时把当前仓库的
+`core.hooksPath` 指向版本化的 `.githooks`。安装后用
+`make hooks-status WORKSPACE_ROOT=..` 同时检查 Codex 发现配置、Git hooks 和最近事件。
+首次补装发现配置后，应新建 Codex 任务，让 SessionStart 记录可靠的工作区基线。
+Codex 的信任与 Hook 内容哈希绑定；`hooks.json` 发生变化后，需要在 Codex 中重新审阅并确认
+一次，不能由仓库脚本替用户绕过。
+
+事件审计写入 `.git/gaia/hook-events.jsonl`，只保留时间、事件、会话、结果和简短错误原因，
+不保存用户 Prompt 或完整工具命令。
+
+## 3. Agent 生命周期
 
 ```mermaid
 flowchart LR
@@ -22,8 +47,9 @@ flowchart LR
     C --> I[实现纵向闭环]
     I --> T[Stop 验证]
     T --> R[stage + change-ready]
-    R --> G[PreToolUse: git commit]
-    G --> H[GitHub Actions]
+    R --> G[PreToolUse + Git pre-commit]
+    G --> V[Git pre-push]
+    V --> H[GitHub Actions]
 ```
 
 ### SessionStart 与 UserPromptSubmit
@@ -74,7 +100,17 @@ make change-ready
 承担实现任务的子 Agent 使用相同检查。只读 Reviewer 不改变 SessionStart 基线，因此不会被要求
 制造无意义的测试或文档变更。
 
-## 3. GitHub 权威验证
+### Git hooks
+
+- `pre-commit`：校验 `change-ready` 生成的凭证仍与 HEAD 和 staged tree 一致；
+- `post-commit`：清理已完成 Change Set 的 manifest 与验证凭证；
+- `pre-push`：执行完整的 `make verify`。
+
+即使 Codex 因任务启动目录错误而未发现 Hook，正常 Git 提交仍会被仓库门禁阻止。`--no-verify`
+属于明确绕过，本项目 Agent 合同禁止使用；GitHub Required Checks 仍是不可由本地状态替代的
+合并门禁。
+
+## 4. GitHub 权威验证
 
 `ci.yml` 在 Pull Request 和 main push 上运行：
 
@@ -88,7 +124,7 @@ make change-ready
 和 main push 不会因为环境中偶然存在 API Key 而调用外部服务。进入发布阶段后，再单独设计
 定时回归、制品签名和可信发布流程。
 
-## 4. 可信边界
+## 5. 可信边界
 
 Codex Hook 可以约束正常 Agent 生命周期，但不是完整安全边界：用户可以使用其他工具修改仓库，
 本地信任也可能被撤销。GitHub Required Checks 才是合并权威门禁。

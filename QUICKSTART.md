@@ -40,6 +40,18 @@ uv run gaia init "$APP_DIR" \
 | `knowledge` | 基于企业知识回答：按权限检索资料并标明来源 |
 | `approval` | 连接并操作业务系统：调用接口并在关键步骤人工确认 |
 
+Dev Console 会在三类模板下分别展示“简历阅读”“员工手册”“请假办理”参考示例，帮助业务
+构建者先理解可实现的体验，再生成自己的项目起点。参考示例通过独立 Showcase 应用提供，
+不把 HR 业务定义写入 Gaia 核心模块。
+
+本地同时运行多个应用时，可以分别指定 Console 要观察的 API 和参考示例地址：
+
+```bash
+VITE_GAIA_API_TARGET=http://localhost:8001 \
+VITE_GAIA_SHOWCASE_URL=http://localhost:4173 \
+npm --prefix apps/web run dev -- --port 4174
+```
+
 首次本地启动并开启 DevTools 后，Quick Start 页面提供同样的场景和组件选择。页面写入能力只对
 仍包含 `.gaia/init.json` 初始化标记的项目开放；完成初始化后自动关闭，生产 API 不注册这些路由。
 

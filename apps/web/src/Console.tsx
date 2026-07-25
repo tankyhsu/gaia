@@ -72,6 +72,9 @@ const QUICKSTART_DISMISSED_KEY = "gaia.dev-console.quickstart.dismissed";
 const DEVELOPER_DOCS_URL =
   import.meta.env.VITE_GAIA_DOCS_URL ||
   `${location.protocol}//${location.hostname}:4175/`;
+const SHOWCASE_URL =
+  import.meta.env.VITE_GAIA_SHOWCASE_URL ||
+  `${location.protocol}//${location.hostname}:4173/`;
 
 const pageAliases: Record<string, string> = {
   workbench: "overview",
@@ -980,23 +983,38 @@ function QuickStartConsole({ finish }: { finish: () => void }) {
           </div>
           <div className="template-options">
             {projectInit.templates.map((template) => (
-              <label
+              <div
                 className={templateId === template.id ? "selected" : ""}
                 key={template.id}
               >
-                <input
-                  type="radio"
-                  name="scenario-template"
-                  value={template.id}
-                  checked={templateId === template.id}
-                  disabled={!projectInit.available}
-                  onChange={() => chooseTemplate(template.id)}
-                />
-                <span>
-                  <strong>{template.name}</strong>
-                  <small>{template.description}</small>
-                </span>
-              </label>
+                <label>
+                  <input
+                    type="radio"
+                    name="scenario-template"
+                    value={template.id}
+                    checked={templateId === template.id}
+                    disabled={!projectInit.available}
+                    onChange={() => chooseTemplate(template.id)}
+                  />
+                  <span>
+                    <strong>{template.name}</strong>
+                    <small>{template.description}</small>
+                  </span>
+                </label>
+                {template.example && (
+                  <a
+                    href={new URL(template.example.path, SHOWCASE_URL).toString()}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    <span>
+                      <small>参考示例</small>
+                      <strong>{template.example.name}</strong>
+                    </span>
+                    <ExternalLink size={14} />
+                  </a>
+                )}
+              </div>
             ))}
           </div>
           <div className="quickstart-safety">

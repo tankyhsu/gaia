@@ -10,9 +10,11 @@ review do not create a change set.
 
 Before editing:
 
-1. Run `make change-start INTENT="<concrete outcome>" KIND=<kind>`.
-2. Read `CONTRIBUTING.md` and the affected public contract.
-3. Identify code, test, documentation, schema, migration, and release impact.
+1. Confirm local enforcement with `make hooks-status`; use the correct `WORKSPACE_ROOT` when Codex
+   starts above the repository.
+2. Run `make change-start INTENT="<concrete outcome>" KIND=<kind>`.
+3. Read `CONTRIBUTING.md` and the affected public contract.
+4. Identify code, test, documentation, schema, migration, and release impact.
 
 While implementing:
 
@@ -40,5 +42,6 @@ Before committing:
 2. Run `make change-ready`.
 3. Commit without modifying the index after verification.
 
-The project Codex hooks enforce this contract at session stop and before `git commit`. GitHub
-Actions independently rerun the full quality matrix in a clean environment.
+The project Codex hooks enforce this contract at session stop and before `git commit`; tracked Git
+hooks provide a second local gate when Codex discovery is unavailable. GitHub Actions independently
+rerun the full quality matrix in a clean environment.

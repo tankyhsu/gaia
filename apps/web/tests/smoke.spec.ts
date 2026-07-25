@@ -18,9 +18,9 @@ async function fixtureApi(page: import("@playwright/test").Page) {
         starters: ["core-runtime", "model-mock"],
         applied: projectApplied,
         templates: [
-          { id: "basic", name: "处理文本和文档", description: "总结、分类、信息抽取和内容生成。", recommended_components: [] },
-          { id: "knowledge", name: "基于企业知识回答", description: "检索企业文档并返回引用。", recommended_components: ["rag"] },
-          { id: "approval", name: "连接并操作业务系统", description: "审批后再执行写操作。", recommended_components: [] },
+          { id: "basic", name: "处理文本和文档", description: "总结、分类、信息抽取和内容生成。", recommended_components: [], example: { name: "简历阅读", description: "定位履历证据。", path: "/#resume" } },
+          { id: "knowledge", name: "基于企业知识回答", description: "检索企业文档并返回引用。", recommended_components: ["rag"], example: { name: "员工手册", description: "回答制度问题。", path: "/#handbook" } },
+          { id: "approval", name: "连接并操作业务系统", description: "审批后再执行写操作。", recommended_components: [], example: { name: "请假办理", description: "审批后写入系统。", path: "/#leave" } },
         ],
         components: [
           { id: "model", name: "外部模型", starter: "model-openai-compatible" },
@@ -320,6 +320,18 @@ test("quick start is skippable and overview remains the daily status page", asyn
   await expect(page.getByText("从一个接近你业务想法的场景开始", { exact: false })).toBeVisible();
   await expect(page.getByRole("heading", { name: "你想先做哪一类 AI 应用？" })).toBeVisible();
   await expect(page.getByText("基于企业知识回答", { exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "参考示例 简历阅读" })).toHaveAttribute(
+    "href",
+    /^http:\/\/(?:localhost|127\.0\.0\.1):4173\/#resume$/,
+  );
+  await expect(page.getByRole("link", { name: "参考示例 员工手册" })).toHaveAttribute(
+    "href",
+    /^http:\/\/(?:localhost|127\.0\.0\.1):4173\/#handbook$/,
+  );
+  await expect(page.getByRole("link", { name: "参考示例 请假办理" })).toHaveAttribute(
+    "href",
+    /^http:\/\/(?:localhost|127\.0\.0\.1):4173\/#leave$/,
+  );
   await expect(page.getByRole("heading", { name: "从 Demo 开始，也保留安全边界" })).toBeVisible();
   await expect(page.getByText("运行 → 安全决策", { exact: false })).toBeVisible();
   await expect(page.getByRole("link", { name: "Gaia 文档" }).first()).toHaveAttribute(

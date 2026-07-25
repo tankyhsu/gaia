@@ -413,7 +413,7 @@ button:disabled {
   gap: 8px;
 }
 
-.template-options label,
+.template-options > div,
 .component-options label {
   min-width: 0;
   display: flex;
@@ -424,14 +424,55 @@ button:disabled {
   cursor: pointer;
 }
 
+.template-options > div {
+  min-height: 146px;
+  flex-direction: column;
+}
+
+.template-options > div.selected {
+  border-color: #2d7266;
+  background: #f1f8f6;
+}
+
 .template-options label {
   min-height: 88px;
   padding: 13px;
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  cursor: pointer;
 }
 
-.template-options label.selected {
-  border-color: #2d7266;
-  background: #f1f8f6;
+.template-options a {
+  min-height: 48px;
+  margin-top: auto;
+  padding: 9px 13px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border-top: 1px solid #e1e7ec;
+  color: #176f60;
+  text-decoration: none;
+}
+
+.template-options a:hover {
+  background: #e9f4f1;
+}
+
+.template-options a span {
+  display: grid;
+  gap: 1px;
+}
+
+.template-options a small {
+  color: #75849a;
+  font-size: 10px;
+}
+
+.template-options a strong {
+  color: #176f60;
+  font-size: 12px;
 }
 
 .quickstart-safety {

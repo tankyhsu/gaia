@@ -390,6 +390,16 @@ def check_receipt() -> list[str]:
     return errors
 
 
+def finish_change() -> None:
+    paths = (
+        MANIFEST_PATH,
+        git_dir() / "gaia" / "change-verification.json",
+    )
+    for path in paths:
+        path.unlink(missing_ok=True)
+    print("Change set metadata cleared.")
+
+
 def print_status(impact: Impact, manifest: dict[str, Any] | None) -> None:
     print(
         json.dumps(
@@ -447,6 +457,7 @@ def build_parser() -> argparse.ArgumentParser:
     verify_parser.add_argument("--write-receipt", action="store_true")
 
     subparsers.add_parser("check-receipt")
+    subparsers.add_parser("finish")
     return parser
 
 
@@ -468,6 +479,9 @@ def main() -> int:
                 checks=args.run_checks,
                 receipt=args.write_receipt,
             )
+        if args.command == "finish":
+            finish_change()
+            return 0
         errors = check_receipt()
         if errors:
             for error in errors:

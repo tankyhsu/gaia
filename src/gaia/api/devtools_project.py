@@ -53,6 +53,15 @@ def create_project_devtools_router(
                     "name": item.name,
                     "description": item.description,
                     "recommended_components": list(item.recommended_components),
+                    "example": (
+                        None
+                        if item.example is None
+                        else {
+                            "name": item.example.name,
+                            "description": item.example.description,
+                            "path": item.example.path,
+                        }
+                    ),
                 }
                 for item in SCENARIO_TEMPLATES.values()
             ],

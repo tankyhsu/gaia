@@ -255,6 +255,11 @@ export interface ProjectInitSnapshot {
     name: string;
     description: string;
     recommended_components: string[];
+    example: {
+      name: string;
+      description: string;
+      path: string;
+    } | null;
   }>;
   components: Array<{
     id: string;

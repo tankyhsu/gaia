@@ -6,11 +6,21 @@ from dataclasses import dataclass
 
 
 @dataclass(frozen=True)
+class ScenarioExample:
+    """A business-facing reference application for one scenario template."""
+
+    name: str
+    description: str
+    path: str
+
+
+@dataclass(frozen=True)
 class ScenarioTemplate:
     template_id: str
     name: str
     description: str
     recommended_components: tuple[str, ...] = ()
+    example: ScenarioExample | None = None
 
 
 SCENARIO_TEMPLATES: dict[str, ScenarioTemplate] = {
@@ -18,17 +28,32 @@ SCENARIO_TEMPLATES: dict[str, ScenarioTemplate] = {
         template_id="basic",
         name="处理文本和文档",
         description="适合总结、分类、信息抽取和内容生成等模型调用场景。",
+        example=ScenarioExample(
+            name="简历阅读",
+            description="从职位要求定位履历证据，并整理需要人工核实的面试问题。",
+            path="/#resume",
+        ),
     ),
     "knowledge": ScenarioTemplate(
         template_id="knowledge",
         name="基于企业知识回答",
         description="适合导入企业资料、按权限检索，并在回答中标明信息来源。",
         recommended_components=("rag",),
+        example=ScenarioExample(
+            name="员工手册",
+            description="根据企业制度回答员工问题，并展示可核对的条款来源。",
+            path="/#handbook",
+        ),
     ),
     "approval": ScenarioTemplate(
         template_id="approval",
         name="连接并操作业务系统",
         description="适合调用企业接口执行操作，并在关键步骤加入人工确认。",
+        example=ScenarioExample(
+            name="请假办理",
+            description="校验休假规则，等待经理确认后再写入考勤系统。",
+            path="/#leave",
+        ),
     ),
 }
 
