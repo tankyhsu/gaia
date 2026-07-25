@@ -1,0 +1,199 @@
+{
+  "schema_version": "1.0.0",
+  "scenario_id": "controlled-task",
+  "cases": [
+    {
+      "case_id": "case-01",
+      "name": "authorized read",
+      "idempotency_key": "acceptance-case-01",
+      "user": {"id": "user-reader", "organization": "org-alpha", "roles": ["reader"]},
+      "request_text": "inspect res-001",
+      "setup": {},
+      "actions": [],
+      "expected": {
+        "status": "succeeded",
+        "error_code": null,
+        "result_contains": {"resource_id": "res-001", "status": "active"},
+        "required_rule_refs": ["RULE-CT-002"],
+        "required_steps": ["interpret_intent", "load_context", "read_resource", "evaluate_rules", "return_read_result", "finalize"],
+        "forbidden_steps": ["create_human_gate", "execute_side_effect"],
+        "side_effect_success_count": 0
+      }
+    },
+    {
+      "case_id": "case-02",
+      "name": "missing resource id",
+      "idempotency_key": "acceptance-case-02",
+      "user": {"id": "user-reader", "organization": "org-alpha", "roles": ["reader"]},
+      "request_text": "inspect",
+      "setup": {},
+      "actions": [],
+      "expected": {
+        "status": "blocked",
+        "error_code": "INVALID_REQUEST",
+        "result_contains": {},
+        "required_rule_refs": ["RULE-CT-001"],
+        "required_steps": ["interpret_intent", "evaluate_rules"],
+        "forbidden_steps": ["execute_side_effect"],
+        "side_effect_success_count": 0
+      }
+    },
+    {
+      "case_id": "case-03",
+      "name": "invalid target status",
+      "idempotency_key": "acceptance-case-03",
+      "user": {"id": "user-operator", "organization": "org-alpha", "roles": ["operator"]},
+      "request_text": "set res-001 status to broken because test",
+      "setup": {},
+      "actions": [],
+      "expected": {
+        "status": "blocked",
+        "error_code": "INVALID_REQUEST",
+        "result_contains": {},
+        "required_rule_refs": ["RULE-CT-003"],
+        "required_steps": ["interpret_intent", "evaluate_rules"],
+        "forbidden_steps": ["create_human_gate", "execute_side_effect"],
+        "side_effect_success_count": 0
+      }
+    },
+    {
+      "case_id": "case-04",
+      "name": "approved high risk write",
+      "idempotency_key": "acceptance-case-04",
+      "user": {"id": "user-operator", "organization": "org-alpha", "roles": ["operator"]},
+      "request_text": "pause res-001 because maintenance window",
+      "setup": {},
+      "actions": [
+        {"type": "human_decision", "decision": "approved", "decided_by": "user-approver", "roles": ["approver"], "comment": "approved for test"}
+      ],
+      "expected": {
+        "status": "succeeded",
+        "error_code": null,
+        "result_contains": {"resource_id": "res-001", "status": "paused"},
+        "required_rule_refs": ["RULE-CT-008"],
+        "required_steps": ["propose_side_effect", "create_human_gate", "execute_side_effect", "finalize"],
+        "forbidden_steps": [],
+        "side_effect_success_count": 1
+      }
+    },
+    {
+      "case_id": "case-05",
+      "name": "cross organization forbidden",
+      "idempotency_key": "acceptance-case-05",
+      "user": {"id": "user-reader", "organization": "org-alpha", "roles": ["reader"]},
+      "request_text": "inspect res-003",
+      "setup": {},
+      "actions": [],
+      "expected": {
+        "status": "blocked",
+        "error_code": "FORBIDDEN",
+        "result_contains": {},
+        "required_rule_refs": ["RULE-CT-004"],
+        "required_steps": ["authorize_context", "read_resource"],
+        "forbidden_steps": ["execute_side_effect"],
+        "side_effect_success_count": 0
+      }
+    },
+    {
+      "case_id": "case-06",
+      "name": "missing evidence",
+      "idempotency_key": "acceptance-case-06",
+      "user": {"id": "user-reader", "organization": "org-alpha", "roles": ["reader"]},
+      "request_text": "inspect res-001",
+      "setup": {"context_mode": "missing_evidence"},
+      "actions": [],
+      "expected": {
+        "status": "degraded",
+        "error_code": "CONTEXT_INSUFFICIENT",
+        "result_contains": {},
+        "required_rule_refs": ["RULE-CT-009"],
+        "required_steps": ["load_context", "evaluate_rules"],
+        "forbidden_steps": ["execute_side_effect"],
+        "side_effect_success_count": 0
+      }
+    },
+    {
+      "case_id": "case-07",
+      "name": "unknown write after timeout",
+      "idempotency_key": "acceptance-case-07",
+      "user": {"id": "user-operator", "organization": "org-alpha", "roles": ["operator"]},
+      "request_text": "pause res-001 because timeout test",
+      "setup": {"write_adapter_mode": "timeout_unknown"},
+      "actions": [
+        {"type": "human_decision", "decision": "approved", "decided_by": "user-approver", "roles": ["approver"], "comment": "approved for timeout test"}
+      ],
+      "expected": {
+        "status": "blocked",
+        "error_code": "SIDE_EFFECT_UNKNOWN",
+        "result_contains": {},
+        "required_rule_refs": ["RULE-CT-008", "RULE-CT-010"],
+        "required_steps": ["create_human_gate", "execute_side_effect"],
+        "forbidden_steps": [],
+        "side_effect_success_count": 0
+      }
+    },
+    {
+      "case_id": "case-08",
+      "name": "duplicate run request is idempotent",
+      "idempotency_key": "acceptance-case-08",
+      "user": {"id": "user-operator", "organization": "org-alpha", "roles": ["operator"]},
+      "request_text": "pause res-001 because duplicate test",
+      "setup": {},
+      "actions": [
+        {"type": "human_decision", "decision": "approved", "decided_by": "user-approver", "roles": ["approver"], "comment": "approved first request"},
+        {"type": "repeat_create_request", "count": 1}
+      ],
+      "expected": {
+        "status": "succeeded",
+        "error_code": null,
+        "result_contains": {"resource_id": "res-001", "status": "paused"},
+        "required_rule_refs": ["RULE-CT-008"],
+        "required_steps": ["execute_side_effect", "finalize"],
+        "forbidden_steps": [],
+        "same_run_id_for_repeated_create": true,
+        "side_effect_success_count": 1
+      }
+    },
+    {
+      "case_id": "case-09",
+      "name": "human rejects write",
+      "idempotency_key": "acceptance-case-09",
+      "user": {"id": "user-operator", "organization": "org-alpha", "roles": ["operator"]},
+      "request_text": "pause res-001 because rejection test",
+      "setup": {},
+      "actions": [
+        {"type": "human_decision", "decision": "rejected", "decided_by": "user-approver", "roles": ["approver"], "comment": "rejected for test"}
+      ],
+      "expected": {
+        "status": "blocked",
+        "error_code": "HUMAN_GATE_REJECTED",
+        "result_contains": {},
+        "required_rule_refs": ["RULE-CT-008"],
+        "required_steps": ["create_human_gate"],
+        "forbidden_steps": ["execute_side_effect"],
+        "side_effect_success_count": 0
+      }
+    },
+    {
+      "case_id": "case-10",
+      "name": "restart while waiting then resume",
+      "idempotency_key": "acceptance-case-10",
+      "user": {"id": "user-operator", "organization": "org-alpha", "roles": ["operator"]},
+      "request_text": "pause res-001 because restart test",
+      "setup": {},
+      "actions": [
+        {"type": "restart_runtime"},
+        {"type": "human_decision", "decision": "approved", "decided_by": "user-approver", "roles": ["approver"], "comment": "approved after restart"}
+      ],
+      "expected": {
+        "status": "succeeded",
+        "error_code": null,
+        "result_contains": {"resource_id": "res-001", "status": "paused"},
+        "required_rule_refs": ["RULE-CT-008"],
+        "required_steps": ["create_human_gate", "execute_side_effect", "finalize"],
+        "forbidden_steps": [],
+        "side_effect_success_count": 1
+      }
+    }
+  ]
+}

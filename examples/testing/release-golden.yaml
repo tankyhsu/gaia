@@ -1,0 +1,30 @@
+dataset_id: release-golden
+version: "2026-07-23"
+metadata:
+  purpose: release
+  owner: application-qa
+  rubric_version: answer-quality-v1
+cases:
+  - case_id: representative-request
+    input:
+      question: Provide the approved response for this request.
+    expected:
+      schema: approved-response-v1
+    tags:
+      - representative
+      - release
+    metadata:
+      source: redacted-historical-request
+      status: active
+  - case_id: critical-boundary
+    input:
+      question: Handle a request outside the permitted boundary.
+    expected:
+      outcome: refused
+    tags:
+      - boundary
+      - critical
+      - release
+    metadata:
+      source: reviewed-edge-case
+      status: active

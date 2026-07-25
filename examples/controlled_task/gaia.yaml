@@ -1,0 +1,105 @@
+gaia:
+  application:
+    name: controlled-task
+    version: 1.0.0
+  profile: mock
+  starters:
+    - core-runtime
+    - model-mock
+    - context-mock
+    - policy-controlled
+    - evaluation-fixtures
+    - import: examples.controlled_task.starter:STARTER
+  runtime:
+    database_url: sqlite+aiosqlite:///./var/gaia.db
+    environment: mock
+  stores:
+    operational:
+      provider: sqlite
+    checkpoint:
+      provider: sqlite
+  model:
+    provider: mock
+    model_id: deterministic-mock
+  workflow:
+    provider: langgraph
+  context:
+    provider: mock
+  policy:
+    provider: controlled
+  evaluation:
+    cases: ./specs/acceptance-cases.json
+  profiles:
+    sandbox:
+      runtime:
+        environment: sandbox
+        write_mode: approval_required
+    redis:
+      starters:
+        - core-runtime
+        - model-mock
+        - context-mock
+        - policy-controlled
+        - evaluation-fixtures
+        - cache-redis
+        - rate-limit-redis
+        - import: examples.controlled_task.starter:STARTER
+      redis:
+        url:
+          env: GAIA_REDIS_URL
+      cache:
+        provider: redis
+      rate_limit:
+        provider: redis
+    postgres:
+      starters:
+        - persistence-postgres
+        - model-mock
+        - embedding-openai-compatible
+        - context-mock
+        - policy-controlled
+        - evaluation-fixtures
+        - checkpoint-postgres
+        - memory-postgres
+        - vector-pgvector
+        - publisher-in-process
+        - outbox-postgres
+        - import: examples.controlled_task.starter:STARTER
+      runtime:
+        database_url:
+          env: GAIA_POSTGRES_URL
+      stores:
+        operational:
+          provider: postgres
+          auto_create: false
+          pool_size: 5
+          max_overflow: 10
+        checkpoint:
+          provider: postgres
+          auto_setup: true
+          pool_min_size: 1
+          pool_max_size: 5
+        memory:
+          provider: postgres
+          auto_setup: true
+          pool_min_size: 1
+          pool_max_size: 5
+        vector:
+          provider: pgvector
+          dimensions: 64
+          distance_type: cosine
+          index_kind: hnsw
+          fields:
+            - "$"
+      embedding:
+        provider: openai-compatible
+        model_id: Qwen/Qwen3-Embedding-0.6B
+        base_url: https://api.siliconflow.cn/v1
+        api_key:
+          env: SILICONFLOW_API_KEY
+        dimensions: 64
+        batch_size: 32
+        timeout_seconds: 30
+      outbox:
+        provider: postgres
+        publisher: in-process

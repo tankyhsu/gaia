@@ -1,0 +1,60 @@
+site_name: Gaia 文档
+site_description: Gaia 企业 AI 应用开发与运行框架
+site_url: http://localhost:4175/
+docs_dir: developer-docs
+site_dir: site
+
+theme:
+  name: material
+  language: zh
+  features:
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - navigation.sections
+    - navigation.top
+    - navigation.indexes
+    - content.code.copy
+    - search.suggest
+  palette:
+    scheme: default
+    primary: teal
+    accent: teal
+
+nav:
+  - 选择入口: index.md
+  - 业务构建者:
+      - 能做什么: business-guide.md
+      - 用模板搭一个 Demo: demo.md
+  - 开发者:
+      - 框架怎么工作: developer-guide.md
+      - 内部机制: mechanisms.md
+      - 安全防护: guardrails.md
+      - 基础概念: concepts.md
+      - 创建第一个项目: getting-started.md
+      - 命令行参考: cli.md
+      - Python API: python-api.md
+      - HTTP API: http-api.md
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [src]
+          options:
+            docstring_section_style: list
+            heading_level: 2
+            show_root_heading: true
+            show_source: false
+            members_order: source
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - tables
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences
+
+extra_css:
+  - stylesheets/extra.css

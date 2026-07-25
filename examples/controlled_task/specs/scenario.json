@@ -1,0 +1,59 @@
+{
+  "scenario_id": "controlled-task",
+  "version": "1.0.0",
+  "workflow_version": "1.0.0",
+  "prompt_version": "1.0.0",
+  "rules_version": "1.0.0",
+  "context_profile_version": "1.0.0",
+  "toolset_version": "1.0.0",
+  "model_profile_version": "1.0.0",
+  "policy": {
+    "policy_id": "policy-controlled-task",
+    "version": "1.0.0",
+    "allowed_tools": ["read_resource", "set_resource_status"],
+    "recognized_roles": ["reader", "operator", "approver"],
+    "max_steps": 20,
+    "max_duration_seconds": 30,
+    "max_model_calls": 2,
+    "write_mode": "approval_required",
+    "human_gate_rules": ["RULE-CT-008"]
+  },
+  "resources": [
+    {"resource_id": "res-001", "organization": "org-alpha", "status": "active", "version": 3, "readable_roles": ["reader", "operator", "approver"]},
+    {"resource_id": "res-002", "organization": "org-alpha", "status": "paused", "version": 7, "readable_roles": ["operator", "approver"]},
+    {"resource_id": "res-003", "organization": "org-beta", "status": "active", "version": 2, "readable_roles": ["reader", "operator", "approver"]}
+  ],
+  "evidence": {
+    "source_id": "evidence-controlled-task",
+    "title": "Controlled Task Operating Rules",
+    "version": "1.0.0",
+    "valid_until": "2099-12-31T23:59:59Z",
+    "access_scope": ["org-alpha", "org-beta"]
+  },
+  "workflow_nodes": [
+    "validate_request",
+    "interpret_intent",
+    "authorize_context",
+    "load_context",
+    "read_resource",
+    "evaluate_rules",
+    "return_read_result",
+    "return_no_change",
+    "propose_side_effect",
+    "create_human_gate",
+    "execute_side_effect",
+    "finalize"
+  ],
+  "rules": [
+    {"rule_id": "RULE-CT-001", "version": "1.0.0"},
+    {"rule_id": "RULE-CT-002", "version": "1.0.0"},
+    {"rule_id": "RULE-CT-003", "version": "1.0.0"},
+    {"rule_id": "RULE-CT-004", "version": "1.0.0"},
+    {"rule_id": "RULE-CT-005", "version": "1.0.0"},
+    {"rule_id": "RULE-CT-006", "version": "1.0.0"},
+    {"rule_id": "RULE-CT-007", "version": "1.0.0"},
+    {"rule_id": "RULE-CT-008", "version": "1.0.0"},
+    {"rule_id": "RULE-CT-009", "version": "1.0.0"},
+    {"rule_id": "RULE-CT-010", "version": "1.0.0"}
+  ]
+}

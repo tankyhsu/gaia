@@ -1,0 +1,40 @@
+{
+  "dataset_id": "minimal-cited-rag",
+  "version": "1.0.0",
+  "documents": [
+    {
+      "document_id": "expense-policy",
+      "version": "2.0.0",
+      "uri": "expense-policy.md",
+      "content": "Employees submit an invoice within 30 days. Finance approval is required.",
+      "allowed_roles": ["finance"]
+    },
+    {
+      "document_id": "people-handbook",
+      "version": "1.0.0",
+      "uri": "people-handbook.md",
+      "content": "Annual leave requests must be submitted through the people portal.",
+      "allowed_roles": ["hr"]
+    }
+  ],
+  "cases": [
+    {
+      "case_id": "finance-hit",
+      "query": "invoice approval",
+      "roles": ["finance"],
+      "expected_document_ids": ["expense-policy"]
+    },
+    {
+      "case_id": "role-denied",
+      "query": "invoice approval",
+      "roles": ["engineering"],
+      "expected_document_ids": []
+    },
+    {
+      "case_id": "hr-hit",
+      "query": "annual leave portal",
+      "roles": ["hr"],
+      "expected_document_ids": ["people-handbook"]
+    }
+  ]
+}
