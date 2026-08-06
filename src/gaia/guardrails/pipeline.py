@@ -13,7 +13,7 @@ from gaia.guardrails.sinks import (
     GuardrailDecisionSink,
     NullGuardrailDecisionSink,
 )
-from gaia.sdk.guardrail import (
+from gaia.spi.guardrail import (
     ContentGuardrail,
     GuardrailAction,
     GuardrailContext,
@@ -22,11 +22,19 @@ from gaia.sdk.guardrail import (
 
 
 class GuardrailViolation(ValueError):
-    def __init__(self, code: str, guardrail_id: str, reason: str | None = None) -> None:
+    def __init__(
+        self,
+        code: str,
+        guardrail_id: str,
+        reason: str | None = None,
+        *,
+        correctable: bool = False,
+    ) -> None:
         super().__init__(f"{code}:{guardrail_id}")
         self.code = code
         self.guardrail_id = guardrail_id
         self.reason = reason
+        self.correctable = correctable
 
 
 class GuardrailPipeline:
@@ -49,6 +57,10 @@ class GuardrailPipeline:
     @property
     def guardrail_ids(self) -> tuple[str, ...]:
         return tuple(item.guardrail_id for item in self._guardrails)
+
+    @property
+    def is_empty(self) -> bool:
+        return not self._guardrails
 
     async def evaluate(self, content: str, context: GuardrailContext) -> str:
         current = content
@@ -110,6 +122,7 @@ class GuardrailPipeline:
                     result.code or "GUARDRAIL_BLOCKED",
                     guardrail.guardrail_id,
                     result.reason,
+                    correctable=result.correctable,
                 )
             if result.action == GuardrailAction.REWRITE:
                 current = output or ""

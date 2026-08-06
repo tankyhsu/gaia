@@ -51,6 +51,10 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: apps/web/package-lock.json
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
       - name: Install locked dependencies
         run: npm ci
       - name: Install Chromium

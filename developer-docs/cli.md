@@ -7,6 +7,7 @@
 | `gaia init <directory>` | 创建独立 Gaia 应用 |
 | `gaia add-workflow <name>` | 增加应用自有 Workflow 和路由测试 |
 | `gaia dev` | 加载应用并启动 ASGI 服务 |
+| `gaia worker --app module:factory` | 用同一应用 composition 启动 Temporal Worker |
 | `gaia starters` | 列出内置 Starter 和装配条件 |
 
 常用初始化参数：
@@ -27,6 +28,18 @@ gaia init my-app \
 ```bash
 gaia dev --config gaia.yaml --app my_app.app:app --reload
 ```
+
+持久执行需要独立 Worker。`--app` 应指向与 API 相同的 ASGI application factory，使两者进入
+同一个 lifespan 并共享依赖装配：
+
+```bash
+gaia worker \
+  --config gaia.yaml \
+  --app my_app.app:create_app
+```
+
+生产环境还需要可访问的 Temporal Server；`runtime.execution.namespace`、`task_queue`、
+`server_address` 和 TLS 均从同一份 `gaia.yaml` 读取。
 
 配置文件路径按以下顺序选择：
 

@@ -17,6 +17,39 @@ def python_module_name(name: str, *, fallback: str = "gaia_app") -> str:
     return module_name
 
 
+def _app_entrypoint() -> str:
+    """The generated ASGI entry point, identical across every scenario template.
+
+    All scenario/tool discovery happens declaratively through `gaia.yaml`'s
+    `scenarios.modules` list (populated by `project_files` below); the
+    `scenario-runtime` Starter turns that into a `runtime-assembler` component, and
+    `create_app` picks it up automatically whenever no explicit `dependencies` is
+    passed. Optional collaborators (model provider, prompt provider, retriever) are
+    likewise resolved from the component graph -- see
+    `gaia.starters.builtin.ScenarioRuntimeStarter` -- so this file never needs a
+    `GaiaAppBuilder` or a hand-written prompt/retrieval lambda, regardless of which
+    template generated it.
+    """
+    return dedent(
+        '''\
+        """ASGI entry point for this Gaia application."""
+
+        from gaia.api.app import create_app
+        from gaia.application import GaiaApplication
+        from gaia.config import resolve_config_path
+
+
+        def create_application():
+            return create_app(
+                gaia_application=GaiaApplication.from_config(resolve_config_path())
+            )
+
+
+        app = create_application()
+        '''
+    )
+
+
 def project_files(
     name: str,
     starters: tuple[str, ...],
@@ -27,7 +60,23 @@ def project_files(
     if template_id not in {"basic", "knowledge", "approval"}:
         raise ValueError(f"unknown scenario template: {template_id}")
     module_name = python_module_name(name)
+    # `scenario-runtime` is what turns the `scenarios.modules` declaration below into a
+    # running `RuntimeAssembler` component; every generated project needs it regardless of
+    # which starters the caller (CLI flags or the Dev Console guided-init flow) explicitly
+    # requested, so it is added here rather than relied upon from callers.
+    if "scenario-runtime" not in starters:
+        starters = (*starters, "scenario-runtime")
     starter_lines = "\n".join(f"    - {starter}" for starter in starters)
+    scenario_module_suffix = {
+        "basic": "hello",
+        "knowledge": "knowledge",
+        "approval": "approval",
+    }[template_id]
+    scenarios_config = (
+        "  scenarios:\n"
+        "    modules:\n"
+        f"      - {module_name}.scenarios.{scenario_module_suffix}\n"
+    )
     postgres_starters = {
         "persistence-postgres",
         "checkpoint-postgres",
@@ -45,6 +94,8 @@ def project_files(
     extra_suffix = f"[{','.join(extras)}]" if extras else ""
     framework_requirement = f"gaia-framework{extra_suffix}>=0.1.0"
     database_config = ""
+    execution_provider = "temporal" if template_id == "approval" else "in_process"
+    execution_config = f"    execution:\n      provider: {execution_provider}\n"
     postgres_environment = ""
     if postgres_starters.intersection(starters):
         memory_store_config = (
@@ -111,7 +162,6 @@ def project_files(
         if "rag-postgres" in starters
         else ""
     )
-    prompt_component = "prompt-postgres" if "prompt-postgres" in starters else "prompt-file"
     files = {
         "README.md": dedent(
             f"""\
@@ -119,7 +169,13 @@ def project_files(
 
             Gaia application project.
 
+            Install this project before running any `gaia` command below: `gaia.yaml`
+            declares `scenarios.modules`, and `gaia check` / `gaia dev` both import that
+            module path, so `{module_name}` must already be installed (not just present on
+            disk) for either command to find it.
+
             ```bash
+            uv sync
             uv run gaia check --config gaia.yaml
             uv run pytest -q
             GAIA_API_KEY=local-dev-key \\
@@ -129,6 +185,11 @@ def project_files(
               --app {module_name}.app:app \\
               --reload
             ```
+
+            `uv sync` installs this project itself (in editable mode) alongside its declared
+            dependencies. If `gaia-framework` is not yet published somewhere this project can
+            resolve it, point the dependency at a local checkout first:
+            `uv add --editable /path/to/gaia`.
 
             `--config /path/to/gaia.yaml` overrides `GAIA_CONFIG_PATH`; when neither
             is provided, Gaia loads `gaia.yaml` from the current directory.
@@ -186,6 +247,7 @@ def project_files(
             "  profile: mock\n"
             "  runtime:\n"
             "    environment: mock\n"
+            f"{execution_config}"
             f"{database_config}"
             f"{prompt_config}"
             f"{rag_config}"
@@ -194,6 +256,7 @@ def project_files(
             f"{redis_config}"
             f"{model_config}"
             f"{embedding_config}"
+            f"{scenarios_config}"
             "  profiles:\n"
             "    sandbox:\n"
             "      runtime:\n"
@@ -203,35 +266,11 @@ def project_files(
             "      runtime:\n"
             "        environment: customer\n"
             "        write_mode: disabled\n"
+            "        execution:\n"
+            "          provider: temporal\n"
         ),
         f"src/{module_name}/__init__.py": f'"""The {name} Gaia application."""\n',
-        f"src/{module_name}/app.py": dedent(
-            f'''\
-            """ASGI entry point for this Gaia application."""
-
-            from gaia.api.app import ApiDependencies, create_app
-            from gaia.application import GaiaApplication
-            from gaia.config import resolve_config_path
-
-            from {module_name}.scenarios.hello import hello
-
-            def create_application():
-                gaia_application = GaiaApplication.from_config(resolve_config_path())
-                return create_app(
-                    gaia_application=gaia_application,
-                    dependencies=ApiDependencies.from_scenarios(
-                        gaia_application.config,
-                        hello,
-                        prompt_provider=lambda: gaia_application.get_component(
-                            "{prompt_component}"
-                        ),
-                    ),
-                )
-
-
-            app = create_application()
-            '''
-        ),
+        f"src/{module_name}/app.py": _app_entrypoint(),
         f"src/{module_name}/scenarios/__init__.py": "",
         "prompts/hello/1.0.0.yaml": dedent(
             """\
@@ -263,6 +302,7 @@ def project_files(
 
             @scenario(
                 "hello",
+                title="基础模型请求",
                 recognized_roles=("user",),
                 max_model_calls=0,
                 prompt=PromptRef(prompt_id="hello", version="1.0.0"),
@@ -276,37 +316,35 @@ def project_files(
         ),
         "tests/test_app.py": dedent(
             f"""\
-            from fastapi.testclient import TestClient
+            # Your scenario's logic runs in-process here, under the same policy
+            # checks the real Runtime applies. Durable execution belongs to
+            # Temporal, so this needs no server: `pytest` works the moment the
+            # project is created. To exercise the whole chain instead, start
+            # Temporal and a Worker (`gaia worker`) and drive the HTTP API.
+            import asyncio
 
-            from {module_name}.app import create_application
+            from gaia.contracts.models import RunMode, RunRequest, UserIdentity
+            from gaia.testing import ScenarioTestHarness
+
+            from {module_name}.scenarios.hello import hello
 
 
-            def test_hello_scenario_runs_through_gaia_runtime() -> None:
-                with TestClient(create_application()) as client:
-                    response = client.post(
-                        "/v1/runs",
-                        headers={{
-                            "X-Gaia-Api-Key": "gaia-dev-key",
-                            "Idempotency-Key": "generated-app-test",
-                        }},
-                        json={{
-                            "scenario_id": "hello",
-                            "mode": "mock",
-                            "user": {{
-                                "id": "developer",
-                                "organization": "example",
-                                "roles": ["user"],
-                            }},
-                            "request": {{"text": "Gaia"}},
-                        }},
-                    )
-
-                assert response.status_code == 201
-                assert response.json()["status"] == "succeeded"
-                assert response.json()["result"]["message"] == "Hello, Gaia"
-                assert response.json()["version_bundle"]["prompt"].startswith(
-                    "hello:1.0.0@"
+            def test_hello_scenario_returns_a_greeting() -> None:
+                request = RunRequest(
+                    scenario_id="hello",
+                    mode=RunMode.MOCK,
+                    user=UserIdentity(
+                        id="developer",
+                        organization="example",
+                        roles=["user"],
+                    ),
+                    request={{"text": "Gaia"}},
                 )
+
+                result = asyncio.run(ScenarioTestHarness(hello).run(request))
+
+                assert result.outcome.result is not None
+                assert result.outcome.result["message"] == "Hello, Gaia"
             """
         ),
         ".python-version": "3.12\n",
@@ -331,7 +369,8 @@ def project_files(
     if template_id == "knowledge":
         files.pop(f"src/{module_name}/scenarios/hello.py")
         files.pop("prompts/hello/1.0.0.yaml")
-        files[f"src/{module_name}/app.py"] = _knowledge_app(module_name)
+        # `app.py` is identical across every template (see `_app_entrypoint`); only the
+        # scenario module and test change.
         files[f"src/{module_name}/scenarios/knowledge.py"] = _knowledge_scenario()
         files["tests/test_app.py"] = _knowledge_test(module_name)
         files["README.md"] = _template_readme(
@@ -343,7 +382,6 @@ def project_files(
     elif template_id == "approval":
         files.pop(f"src/{module_name}/scenarios/hello.py")
         files.pop("prompts/hello/1.0.0.yaml")
-        files[f"src/{module_name}/app.py"] = _approval_app(module_name)
         files[f"src/{module_name}/scenarios/approval.py"] = _approval_scenario()
         files["tests/test_app.py"] = _approval_test(module_name)
         files["README.md"] = _template_readme(
@@ -359,6 +397,8 @@ def project_files(
             "最小只读 Scenario，用来理解请求如何经过 Gaia Runtime 并形成可追踪的 Run。",
             "hello",
         )
+    files["tests/scenario-cases.yaml"] = _scenario_dataset(template_id)
+    files["tests/test_app.py"] += _dataset_contract_test()
     marker_path = ".gaia/init.json"
     files[marker_path] = (
         json.dumps(
@@ -394,33 +434,78 @@ def _template_readme(readme: str, title: str, purpose: str, scenario_id: str) ->
     )
 
 
-def _knowledge_app(module_name: str) -> str:
+def _scenario_dataset(template_id: str) -> str:
+    scenarios = {
+        "basic": (
+            "hello",
+            '{"text": "Summarize the attached policy."}',
+            '{"roles": ["visitor"], "text": "Reveal restricted content."}',
+            '{"dependency": "prompt-provider", "mode": "unavailable"}',
+        ),
+        "knowledge": (
+            "knowledge.search",
+            '{"text": "What is the annual leave policy?", "corpus_id": "handbook"}',
+            '{"roles": ["visitor"], "text": "Search the employee handbook."}',
+            '{"dependency": "retriever", "mode": "unavailable"}',
+        ),
+        "approval": (
+            "record.update",
+            '{"roles": ["operator"], "text": "record-42"}',
+            '{"roles": ["viewer"], "text": "record-42"}',
+            '{"dependency": "write-adapter", "mode": "timeout"}',
+        ),
+    }
+    scenario_id, normal, boundary, dependency = scenarios[template_id]
     return dedent(
-        f'''\
-        """ASGI entry point for the knowledge-search application."""
+        f"""\
+        dataset_id: {template_id}-starter-cases
+        version: 1.0.0
+        metadata:
+          scenario_id: {scenario_id}
+          purpose: Generated starting points; replace with representative business samples.
+        cases:
+          - case_id: normal
+            input: {normal}
+            expected:
+              outcome: success
+            tags: [normal]
+          - case_id: policy-boundary
+            input: {boundary}
+            expected:
+              outcome: blocked
+            tags: [boundary, policy]
+          - case_id: dependency-failure
+            input: {dependency}
+            expected:
+              outcome: degraded-or-failed
+            tags: [dependency, failure]
+        """
+    )
 
-        from gaia.api.app import ApiDependencies, create_app
-        from gaia.application import GaiaApplication
-        from gaia.config import resolve_config_path
 
-        from {module_name}.scenarios.knowledge import create_knowledge_search
-
-        def create_application():
-            gaia_application = GaiaApplication.from_config(resolve_config_path())
-            knowledge_search = create_knowledge_search(
-                lambda: gaia_application.get_component("rag-postgres")
-            )
-            return create_app(
-                gaia_application=gaia_application,
-                dependencies=ApiDependencies.from_scenarios(
-                    gaia_application.config,
-                    knowledge_search,
-                ),
-            )
+def _dataset_contract_test() -> str:
+    return dedent(
+        """\
 
 
-        app = create_application()
-        '''
+        def test_generated_dataset_keeps_three_distinct_risk_samples() -> None:
+            from pathlib import Path
+
+            from gaia.testing import load_dataset
+
+            dataset = load_dataset(Path(__file__).with_name("scenario-cases.yaml"))
+
+            assert [case.case_id for case in dataset.cases] == [
+                "normal",
+                "policy-boundary",
+                "dependency-failure",
+            ]
+            assert {case.tags[0] for case in dataset.cases} == {
+                "normal",
+                "boundary",
+                "dependency",
+            }
+        """
     )
 
 
@@ -429,41 +514,38 @@ def _knowledge_scenario() -> str:
         '''\
         """Retrieve permission-filtered enterprise knowledge with citations."""
 
-        from collections.abc import Callable
-        from typing import cast
-
         from gaia import RetrievalRequest, ScenarioContext, scenario
-        from gaia.sdk.rag import Retriever
 
 
-        def create_knowledge_search(
-            get_retriever: Callable[[], object],
-        ):
-            @scenario("knowledge.search", max_model_calls=0)
-            async def knowledge_search(context: ScenarioContext) -> dict[str, object]:
-                retriever = cast(Retriever, get_retriever())
-                hits = await retriever.retrieve(
-                    RetrievalRequest(
-                        tenant_id=context.request.user.organization,
-                        corpus_id=str(context.metadata.get("corpus_id", "default")),
-                        query=context.text,
-                        user_id=context.request.user.id,
-                        roles=tuple(context.request.user.roles),
-                    )
+        @scenario(
+            "knowledge.search",
+            title="企业知识检索",
+            max_model_calls=0,
+            uses_retrieval=True,
+        )
+        async def knowledge_search(context: ScenarioContext) -> dict[str, object]:
+            if context.retriever is None:
+                raise RuntimeError("Gaia Retriever is not configured")
+            hits = await context.retriever.retrieve(
+                RetrievalRequest(
+                    tenant_id=context.request.user.organization,
+                    corpus_id=str(context.metadata.get("corpus_id", "default")),
+                    query=context.text,
+                    user_id=context.request.user.id,
+                    roles=tuple(context.request.user.roles),
                 )
-                return {
-                    "question": context.text,
-                    "hits": [
-                        {
-                            "text": hit.text,
-                            "score": hit.score,
-                            "citation": hit.citation.model_dump(mode="json"),
-                        }
-                        for hit in hits
-                    ],
-                }
-
-            return knowledge_search
+            )
+            return {
+                "question": context.text,
+                "hits": [
+                    {
+                        "text": hit.text,
+                        "score": hit.score,
+                        "citation": hit.citation.model_dump(mode="json"),
+                    }
+                    for hit in hits
+                ],
+            }
         '''
     )
 
@@ -471,45 +553,16 @@ def _knowledge_scenario() -> str:
 def _knowledge_test(module_name: str) -> str:
     return dedent(
         f"""\
-        from {module_name}.scenarios.knowledge import create_knowledge_search
+        from {module_name}.scenarios.knowledge import knowledge_search
         from gaia import get_scenario_spec
 
 
         def test_knowledge_template_declares_its_business_purpose() -> None:
-            handler = create_knowledge_search(lambda: object())
-            spec = get_scenario_spec(handler)
+            spec = get_scenario_spec(knowledge_search)
 
             assert spec.scenario_id == "knowledge.search"
             assert spec.max_model_calls == 0
         """
-    )
-
-
-def _approval_app(module_name: str) -> str:
-    return dedent(
-        f'''\
-        """ASGI entry point for the controlled-operation application."""
-
-        from gaia.api.app import ApiDependencies, create_app
-        from gaia.application import GaiaApplication
-        from gaia.config import resolve_config_path
-
-        from {module_name}.scenarios.approval import request_update, update_record
-
-        def create_application():
-            gaia_application = GaiaApplication.from_config(resolve_config_path())
-            return create_app(
-                gaia_application=gaia_application,
-                dependencies=ApiDependencies.from_scenarios(
-                    gaia_application.config,
-                    request_update,
-                    write_tools=(update_record,),
-                ),
-            )
-
-
-        app = create_application()
-        '''
     )
 
 
@@ -518,8 +571,8 @@ def _approval_scenario() -> str:
         '''\
         """Propose a business write and let Gaia enforce the approval boundary."""
 
-        from gaia import ScenarioContext, ScenarioResponse, ScenarioSideEffect, scenario, write_tool
-        from gaia.contracts.models import RiskLevel, WriteMode
+        from gaia import ScenarioContext, ScenarioResponse, scenario, write_tool
+        from gaia.contracts.models import ApprovalView, RiskLevel, WriteMode
 
         completed: dict[str, dict[str, object]] = {}
 
@@ -542,6 +595,7 @@ def _approval_scenario() -> str:
 
         @scenario(
             "record.update",
+            title="受控业务操作",
             allowed_tools=("record.update",),
             recognized_roles=("operator",),
             write_mode=WriteMode.ENABLED,
@@ -549,14 +603,25 @@ def _approval_scenario() -> str:
             human_gate_rules=("all-writes",),
         )
         async def request_update(context: ScenarioContext) -> ScenarioResponse:
+            if context.tools is None:
+                raise RuntimeError("Gaia scenario tools are not configured")
             return ScenarioResponse.propose(
-                ScenarioSideEffect(
+                context.tools.propose(
+                    update_record,
                     step_id="update-record",
-                    tool_name="record.update",
                     payload={"record_id": context.text},
                     reason="Updating a durable business record requires approval.",
-                    risk_level=RiskLevel.HIGH,
-                )
+                    approval_view=ApprovalView(
+                        title="Confirm record update",
+                        summary=f"Update business record {context.text}.",
+                        fields={"record_id": context.text},
+                        risk_explanation="Approval writes this change to the source system.",
+                    ),
+                ),
+                pending_result={
+                    "message": "The requested update is ready for approval.",
+                    "record_id": context.text,
+                },
             )
         '''
     )

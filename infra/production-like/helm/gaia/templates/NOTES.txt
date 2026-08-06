@@ -1,0 +1,15 @@
+Gaia production-like has been installed.
+
+Release: {{ .Release.Name }}
+Namespace: {{ .Release.Namespace }}
+API service: {{ include "gaia.fullname" . }}-api:{{ .Values.api.service.port }}
+{{- if .Values.console.enabled }}
+Console service: {{ include "gaia.fullname" . }}-console:{{ .Values.console.service.port }}
+
+Local access:
+  kubectl port-forward --namespace {{ .Release.Namespace }} svc/{{ include "gaia.fullname" . }}-console 4180:{{ .Values.console.service.port }}
+{{- end }}
+
+The chart intentionally does not install PostgreSQL, Redis, Temporal, or
+Langfuse. Manage those with their official charts or platform services and
+configure their endpoints in values plus {{ include "gaia.secretName" . }}.

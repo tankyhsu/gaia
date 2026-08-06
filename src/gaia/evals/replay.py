@@ -21,19 +21,13 @@ from gaia.contracts.models import (
     RunStatus,
 )
 from gaia.persistence.models import ReplayCaseResultRecord, ReplayJobRecord
-from gaia.runtime.engine import RuntimeEngine
+from gaia.runtime.contracts import RuntimeEngine
 
 
 class ReplayFixtureSource(Protocol):
     def cases(self) -> list[dict[str, Any]]: ...
 
     def request_for(self, case: dict[str, Any]) -> RunRequest: ...
-
-
-class ReplayRuntimeFixture(Protocol):
-    def create_runtime(
-        self, session_factory: async_sessionmaker[AsyncSession]
-    ) -> RuntimeEngine: ...
 
 
 class JsonReplayFixtureSource:
@@ -68,11 +62,11 @@ class ReplayRunner:
         self,
         factory: async_sessionmaker[AsyncSession],
         fixture_source: ReplayFixtureSource,
-        runtime_fixture_factory: Callable[[], ReplayRuntimeFixture],
+        runtime_factory: Callable[[], RuntimeEngine],
     ) -> None:
         self._factory = factory
         self._fixture_source = fixture_source
-        self._runtime_fixture_factory = runtime_fixture_factory
+        self._runtime_factory = runtime_factory
 
     async def run(self, request: ReplayRequest) -> ReplaySnapshot:
         available = {case["case_id"]: case for case in self._fixture_source.cases()}
@@ -163,15 +157,14 @@ class ReplayRunner:
             )
 
     async def _run_case(self, replay_id: str, case: dict[str, Any]) -> ReplayCaseResult:
-        runtime_fixture = self._runtime_fixture_factory()
-        runtime = runtime_fixture.create_runtime(self._factory)
+        runtime = self._runtime_factory()
         request = self._fixture_source.request_for(case)
         snapshot = await runtime.create(request, f"replay:{replay_id}:{case['idempotency_key']}")
         initial_run_id = snapshot.run_id
         for action in case.get("actions", []):
             action_type = action["type"]
             if action_type == "restart_runtime":
-                runtime = runtime_fixture.create_runtime(self._factory)
+                runtime = self._runtime_factory()
             elif action_type == "human_decision":
                 snapshot = await runtime.decide(
                     snapshot.pending_gate_id or "",
@@ -202,8 +195,6 @@ class ReplayRunner:
             "required_steps": set(expected["required_steps"]) <= steps,
             "forbidden_steps": not set(expected["forbidden_steps"]).intersection(steps),
             "required_rule_refs": set(expected["required_rule_refs"]) <= rules,
-            "side_effect_success_count": runtime.side_effect_success_count
-            == expected["side_effect_success_count"],
             "same_run_id": snapshot.run_id == initial_run_id,
         }
         assertions = [{"name": name, "passed": passed} for name, passed in checks.items()]

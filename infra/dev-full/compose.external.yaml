@@ -1,0 +1,19 @@
+services:
+  hr-api:
+    environment:
+      GAIA_CONFIG_PATH: /etc/gaia/hr-gaia.yaml
+    depends_on: !override
+      gaia-migrate:
+        condition: service_completed_successfully
+    volumes:
+      - ${HR_GAIA_CONFIG_FILE:?HR_GAIA_CONFIG_FILE is required}:/etc/gaia/hr-gaia.yaml:ro
+
+  hr-worker:
+    environment:
+      GAIA_CONFIG_PATH: /etc/gaia/hr-gaia.yaml
+    depends_on: !override
+      gaia-migrate:
+        condition: service_completed_successfully
+    volumes:
+      - ${HR_GAIA_CONFIG_FILE:?HR_GAIA_CONFIG_FILE is required}:/etc/gaia/hr-gaia.yaml:ro
+    command: ["gaia", "worker", "--config", "/etc/gaia/hr-gaia.yaml", "--app", "hr_showcase.app:create_app"]

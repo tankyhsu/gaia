@@ -6,8 +6,8 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
-from gaia.sdk.memory import MemoryItem, MemoryStore
-from gaia.sdk.rag import (
+from gaia.spi.memory import MemoryItem, MemoryStore
+from gaia.spi.rag import (
     Citation,
     DocumentAccess,
     DocumentChunk,

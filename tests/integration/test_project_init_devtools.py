@@ -44,22 +44,24 @@ def test_quickstart_applies_template_once_and_then_closes(
         after_complete = client.get("/devtools/project/init", headers=headers)
 
     assert initial.status_code == 200
+    assert initial.json()["template_id"] == "knowledge"
     assert {item["id"] for item in initial.json()["templates"]} == {
-        "basic",
         "knowledge",
         "approval",
     }
     assert {
         item["id"]: item["example"]["name"]
         for item in initial.json()["templates"]
+        if item["example"] is not None
     } == {
-        "basic": "简历阅读",
         "knowledge": "员工手册",
-        "approval": "请假办理",
+        "approval": "入职权限开通",
     }
     assert {
-        item["example"]["path"] for item in initial.json()["templates"]
-    } == {"/#resume", "/#handbook", "/#leave"}
+        item["example"]["path"]
+        for item in initial.json()["templates"]
+        if item["example"] is not None
+    } == {"/#handbook", "/#onboarding"}
     assert applied.status_code == 200
     assert applied.json()["restart_required"] is True
     assert "cache-redis" in applied.json()["starters"]

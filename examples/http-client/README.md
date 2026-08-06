@@ -1,6 +1,6 @@
 # Gaia public HTTP client demos
 
-These standalone Python 3 demos use only Gaia's public HTTP API and the standard library. They assume a Gaia service at `http://localhost:8000` and use `gaia-dev-key` by default. Override either with `GAIA_BASE_URL` and `GAIA_API_KEY`.
+These standalone Python 3 demos use only Gaia's public HTTP API and the standard library. They assume a Gaia service at `http://127.0.0.1:8000` and use `gaia-dev-key` by default. Override either with `GAIA_BASE_URL` and `GAIA_API_KEY`.
 
 Run from the Gaia repository root:
 

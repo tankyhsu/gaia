@@ -16,7 +16,7 @@ from gaia.observability.models import (
     RunModelObservability,
 )
 from gaia.persistence.models import ModelInvocationRecord
-from gaia.sdk.model import ModelUsage
+from gaia.spi.model import ModelUsage
 
 
 class SqlAlchemyModelInvocationStore:

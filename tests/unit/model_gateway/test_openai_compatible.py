@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 import httpx
 import respx
 from pydantic import BaseModel
@@ -8,7 +10,7 @@ from gaia.contracts.models import ModelCapabilities, ModelEndpointProfile
 from gaia.model_gateway import OpenAICompatibleProvider
 from gaia.observability import InstrumentedModelProvider
 from gaia.observability.models import ModelInvocation
-from gaia.sdk.model import ModelCallContext, ModelMessage
+from gaia.spi.model import ModelCallContext, ModelMessage
 
 
 class Answer(BaseModel):
@@ -71,6 +73,14 @@ async def test_openai_compatible_provider_uses_common_observation_contract() -> 
         )
 
     assert route.called
+    request_body = json.loads(route.calls.last.request.content)
+    assert request_body["messages"][0]["role"] == "system"
+    assert "JSON Schema" in request_body["messages"][0]["content"]
+    assert request_body["messages"][1] == {
+        "role": "user",
+        "content": "customer content",
+    }
+    assert request_body["response_format"] == {"type": "json_object"}
     assert result.usage is not None
     assert result.usage.total_tokens == 13
     assert sink.items[0].usage == result.usage

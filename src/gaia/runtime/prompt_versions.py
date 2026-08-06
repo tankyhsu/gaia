@@ -6,7 +6,7 @@ from collections.abc import Mapping
 
 from gaia.contracts.models import RunRequest, VersionBundle
 from gaia.runtime.dependencies import VersionResolutionError
-from gaia.sdk.prompt import PromptProvider, PromptRef
+from gaia.spi.prompt import PromptProvider, PromptRef
 
 
 class PromptRunVersionResolver:

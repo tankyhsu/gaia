@@ -29,8 +29,8 @@ from gaia.runtime.dependencies import (
     RuntimeTraceStep,
     SideEffectProposal,
 )
-from gaia.sdk.context import ContextQuery, RunSession
-from gaia.sdk.model import ModelCallContext, ModelMessage, ModelProvider
+from gaia.spi.context import ContextQuery, RunSession
+from gaia.spi.model import ModelCallContext, ModelMessage, ModelProvider
 
 SCENARIO_PATH = Path(__file__).parent / "specs" / "scenario.json"
 

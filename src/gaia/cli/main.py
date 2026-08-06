@@ -18,7 +18,9 @@ from gaia.cli.prompts import execute_prompt_command, prompt_result_json
 from gaia.config import resolve_config_path, resolve_secret
 from gaia.contracts.models import RunMode
 from gaia.diagnostics.doctor import run_doctor
-from gaia.starters import BUILTIN_STARTERS
+from gaia.diagnostics.error_catalog import error_descriptor
+from gaia.diagnostics.import_purity import PurityFinding, scan_module_purity
+from gaia.starters import BUILTIN_STARTERS, ScenarioDiscoveryError
 from gaia.templates import (
     COMPONENT_STARTERS,
     SCENARIO_TEMPLATES,
@@ -31,6 +33,7 @@ from gaia.testing import GaiaTestKit, load_dataset
 Output = Callable[[str], None]
 ServerRunner = Callable[..., None]
 ApiFactory = Callable[..., Any]
+WorkerRunner = Callable[[GaiaApplication, str], None]
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -98,6 +101,19 @@ def build_parser() -> argparse.ArgumentParser:
         "--reload",
         action="store_true",
         help="reload the ASGI application after source changes; requires --app",
+    )
+
+    worker = commands.add_parser(
+        "worker",
+        help="run the Temporal Worker for an application composition",
+    )
+    _config_argument(worker)
+    worker.add_argument("--set", dest="overrides", action="append", default=[])
+    worker.add_argument(
+        "--app",
+        dest="app_target",
+        required=True,
+        help="ASGI application factory import string, for example my_app.app:create_app",
     )
 
     test = commands.add_parser("test", help="run a Gaia Test Kit dataset")
@@ -236,9 +252,61 @@ def _condition_data(report: Any) -> dict[str, object]:
     }
 
 
+def _check_failure_operator_action(error: Exception) -> str:
+    """Prefer the error catalog's specific guidance when the failure carries a known code.
+
+    `ScenarioDiscoveryError` (raised by `discover_scenarios` when `scenarios.modules`
+    fails to import, or declares a duplicate scenario/tool/agent/continuation name) is
+    the common case: its `.code` is a stable machine code the error catalog already has
+    real operator guidance for (e.g. `SCENARIO_MODULE_NOT_FOUND` -> "install the project
+    so its package is importable"). Falling back to the generic gaia.yaml-focused action
+    for that case sends a brand-new user -- this is typically the very first command they
+    run after `gaia init` -- to edit the wrong file. Every other configuration failure
+    (bad YAML, unresolved Starter, invalid profile, ...) keeps the generic action.
+    """
+
+    if isinstance(error, ScenarioDiscoveryError):
+        return error_descriptor(error.code).operator_action
+    return "Correct the reported gaia.yaml, profile, secret reference, or Starter issue."
+
+
+def _purity_issue(finding: PurityFinding) -> str:
+    return f"{finding.module}:{finding.line}: {finding.symbol} - {finding.hint}"
+
+
 def _check(config_path: Path, overrides: list[str], output: Output) -> int:
     try:
         application = GaiaApplication.from_config(config_path, overrides=overrides)
+        # A2.1: scan every declared scenario module for import-time I/O *before*
+        # configure() runs. After A4, configure() imports these modules for real via the
+        # scenario-runtime Starter, so scanning afterward would be pointless -- any real
+        # side effect the scan is meant to catch would already have happened.
+        purity_findings = tuple(
+            finding
+            for module_name in application.config.scenarios.modules
+            for finding in scan_module_purity(module_name)
+        )
+        if purity_findings:
+            output(
+                json.dumps(
+                    {
+                        "ok": False,
+                        "message": "Scenario module import-purity check failed.",
+                        "operator_action": (
+                            "Move the flagged calls into a Starter component registered "
+                            "with ComponentScope.APPLICATION so the application lifespan "
+                            "manages them; scenario modules must stay import-pure. This "
+                            "is a best-effort lint, not an isolation guarantee -- see "
+                            "gaia.diagnostics.import_purity for what it does and does not "
+                            "catch."
+                        ),
+                        "issues": [_purity_issue(finding) for finding in purity_findings],
+                        "components": [],
+                        "conditions": [],
+                    }
+                )
+            )
+            return 2
         context = asyncio.run(application.configure())
     except Exception as error:  # CLI must turn config/application errors into a stable exit code.
         output(
@@ -246,10 +314,7 @@ def _check(config_path: Path, overrides: list[str], output: Output) -> int:
                 {
                     "ok": False,
                     "message": "Configuration validation failed.",
-                    "operator_action": (
-                        "Correct the reported gaia.yaml, profile, secret reference, "
-                        "or Starter issue."
-                    ),
+                    "operator_action": _check_failure_operator_action(error),
                     "issues": [str(error)],
                     "components": [],
                     "conditions": [],
@@ -375,6 +440,74 @@ def _default_api_factory(*, database_url: str, gaia_application: GaiaApplication
     return create_app(database_url=database_url, gaia_application=gaia_application)
 
 
+def _import_target(target: str) -> Any:
+    module_name, separator, attribute_name = target.partition(":")
+    if not separator or not module_name or not attribute_name:
+        raise ValueError("import target must use module:attribute")
+    return getattr(import_module(module_name), attribute_name)
+
+
+async def _serve_temporal_worker(
+    application: GaiaApplication,
+    app_target: str,
+) -> None:
+    from gaia.runtime.temporal_runtime import TemporalRuntimeEngine
+    from gaia.runtime.temporal_worker import run_temporal_worker
+
+    imported = _import_target(app_target)
+    app = imported() if callable(imported) else imported
+    async with app.router.lifespan_context(app):
+        runtime = app.state.runtime
+        if not isinstance(runtime, TemporalRuntimeEngine):
+            raise ValueError("application does not expose a TemporalRuntimeEngine")
+        await run_temporal_worker(
+            execution=application.config.runtime.execution,
+            runtime=runtime,
+        )
+
+
+def _default_worker_runner(
+    application: GaiaApplication,
+    app_target: str,
+) -> None:
+    asyncio.run(_serve_temporal_worker(application, app_target))
+
+
+def _worker(
+    config_path: Path,
+    overrides: list[str],
+    app_target: str,
+    worker_runner: WorkerRunner,
+    output: Output,
+) -> int:
+    try:
+        application = GaiaApplication.from_config(config_path, overrides=overrides)
+        previous_config_path = os.environ.get("GAIA_CONFIG_PATH")
+        previous_profile = os.environ.get("GAIA__PROFILE")
+        try:
+            os.environ["GAIA_CONFIG_PATH"] = str(config_path)
+            os.environ["GAIA__PROFILE"] = application.config.profile
+            output(
+                "starting Temporal Worker "
+                f"namespace={application.config.runtime.execution.namespace} "
+                f"task_queue={application.config.runtime.execution.task_queue}"
+            )
+            worker_runner(application, app_target)
+        finally:
+            if previous_config_path is None:
+                os.environ.pop("GAIA_CONFIG_PATH", None)
+            else:
+                os.environ["GAIA_CONFIG_PATH"] = previous_config_path
+            if previous_profile is None:
+                os.environ.pop("GAIA__PROFILE", None)
+            else:
+                os.environ["GAIA__PROFILE"] = previous_profile
+    except Exception as error:
+        output(f"gaia worker failed: {error}")
+        return 2
+    return 0
+
+
 def _dev(
     config_path: Path,
     overrides: list[str],
@@ -477,6 +610,7 @@ def main(
     output: Output = print,
     server_runner: ServerRunner = _default_server_runner,
     api_factory: ApiFactory = _default_api_factory,
+    worker_runner: WorkerRunner = _default_worker_runner,
 ) -> int:
     """Run the Gaia CLI and return a process-style exit code."""
     args = build_parser().parse_args(argv)
@@ -501,6 +635,11 @@ def main(
         output(
             f"initialized Gaia application in {args.directory} "
             f"with template {args.template} and starters: {', '.join(starters)}"
+        )
+        output(
+            f"next: cd {args.directory} && uv sync -- installs this project so its "
+            "scenarios.modules package is importable, which `gaia check` and `gaia dev` "
+            "both require"
         )
         return 0
     if args.command == "add-workflow":
@@ -528,6 +667,14 @@ def main(
             args.repetitions,
             args.subject,
             args.output,
+            output,
+        )
+    if args.command == "worker":
+        return _worker(
+            args.config,
+            _config_overrides(args),
+            args.app_target,
+            worker_runner,
             output,
         )
     return _dev(

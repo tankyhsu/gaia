@@ -1,6 +1,9 @@
 site_name: Gaia 文档
 site_description: Gaia 企业 AI 应用开发与运行框架
-site_url: http://localhost:4175/
+site_url: https://tankyhsu.github.io/gaia/
+repo_url: https://github.com/tankyhsu/gaia
+repo_name: tankyhsu/gaia
+edit_uri: edit/main/developer-docs/
 docs_dir: developer-docs
 site_dir: site
 
@@ -21,19 +24,24 @@ theme:
     accent: teal
 
 nav:
-  - 选择入口: index.md
-  - 业务构建者:
-      - 能做什么: business-guide.md
-      - 用模板搭一个 Demo: demo.md
-  - 开发者:
+  - Gaia 概览: index.md
+  - 开始:
+      - 从三个 Case 理解 Gaia: try-it.md
+      - 选择运行与部署方式: runtime-profiles.md
+      - 20 分钟走通 Gaia: getting-started.md
+      - 构建一个 Demo: demo.md
+      - HR 参考应用: showcase.md
+  - 框架:
+      - 架构全景图: architecture.md
+      - 本地 Production-like 验证: production-like.md
       - 框架怎么工作: developer-guide.md
       - 内部机制: mechanisms.md
       - 安全防护: guardrails.md
       - 基础概念: concepts.md
-      - 创建第一个项目: getting-started.md
       - 命令行参考: cli.md
       - Python API: python-api.md
-      - HTTP API: http-api.md
+      - HTTP 认证与授权: http-api.md
+      - 从其他语言接入: client-sdks.md
 
 plugins:
   - search

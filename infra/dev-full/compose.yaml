@@ -1,0 +1,218 @@
+services:
+  gaia-redis:
+    profiles: ["managed-redis"]
+    image: redis:7.4-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
+    volumes:
+      - gaia-redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  temporal-initialize:
+    environment:
+      TEMPORAL_NAMESPACE: gaia-dev-full
+
+  gaia-migrate:
+    environment: &gaia-dev-full-environment
+      GAIA_CONFIG_PATH: /app/infra/dev-full/gaia.yaml
+      GAIA_DEVTOOLS_ENABLED: "true"
+      GAIA_REDIS_URL: redis://gaia-redis:6379/0
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:?DEEPSEEK_API_KEY is required}
+    depends_on:
+      gaia-redis:
+        condition: service_healthy
+    command:
+      - gaia
+      - migrate
+      - --config
+      - /app/infra/dev-full/gaia.yaml
+
+  api-a:
+    environment: *gaia-dev-full-environment
+    depends_on:
+      gaia-redis:
+        condition: service_healthy
+
+  api-b:
+    environment: *gaia-dev-full-environment
+    depends_on:
+      gaia-redis:
+        condition: service_healthy
+
+  worker-a:
+    environment: *gaia-dev-full-environment
+    depends_on:
+      gaia-redis:
+        condition: service_healthy
+    command:
+      - gaia
+      - worker
+      - --config
+      - /app/infra/dev-full/gaia.yaml
+      - --app
+      - examples.controlled_task.app:create_app
+
+  worker-b:
+    environment: *gaia-dev-full-environment
+    depends_on:
+      gaia-redis:
+        condition: service_healthy
+    command:
+      - gaia
+      - worker
+      - --config
+      - /app/infra/dev-full/gaia.yaml
+      - --app
+      - examples.controlled_task.app:create_app
+
+  hr-api:
+    image: gaia-framework:production-like
+    restart: unless-stopped
+    user: "0:0"
+    working_dir: /hr
+    environment: &hr-dev-full-environment
+      PYTHONPATH: /hr:/app/src
+      GAIA_CONFIG_PATH: /app/infra/dev-full/hr-gaia.yaml
+      GAIA_API_KEY: ${GAIA_API_KEY:-gaia-production-like-key}
+      GAIA_DATABASE_URL: postgresql://gaia:${GAIA_POSTGRES_PASSWORD:-gaia-production-like-password}@gaia-postgres:5432/gaia
+      GAIA_POSTGRES_URL: postgresql://gaia:${GAIA_POSTGRES_PASSWORD:-gaia-production-like-password}@gaia-postgres:5432/gaia
+      GAIA_REDIS_URL: redis://gaia-redis:6379/1
+      GAIA_DEVTOOLS_ENABLED: "true"
+      GAIA_PROJECT_ROOT: /hr
+      HR_SHOWCASE_VAR_DIR: /var/hr
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:?DEEPSEEK_API_KEY is required}
+      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-pk-lf-gaia-production-like}
+      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-sk-lf-gaia-production-like}
+    volumes:
+      - ../../../showcase/gaia-hr-suite/backend:/hr:ro
+      - hr-showcase-data:/var/hr
+    depends_on:
+      gaia-migrate:
+        condition: service_completed_successfully
+      gaia-redis:
+        condition: service_healthy
+      temporal-initialize:
+        condition: service_completed_successfully
+      langfuse-web:
+        condition: service_healthy
+    command:
+      - uvicorn
+      - hr_showcase.app:create_app
+      - --factory
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request; urllib.request.urlopen('http://localhost:8000/health/ready', timeout=3)
+      interval: 3s
+      timeout: 5s
+      retries: 40
+
+  hr-worker:
+    image: gaia-framework:production-like
+    restart: unless-stopped
+    user: "0:0"
+    working_dir: /hr
+    environment: *hr-dev-full-environment
+    volumes:
+      - ../../../showcase/gaia-hr-suite/backend:/hr:ro
+      - hr-showcase-data:/var/hr
+    depends_on:
+      gaia-migrate:
+        condition: service_completed_successfully
+      gaia-redis:
+        condition: service_healthy
+      temporal-initialize:
+        condition: service_completed_successfully
+      langfuse-web:
+        condition: service_healthy
+    command:
+      - gaia
+      - worker
+      - --config
+      - /app/infra/dev-full/hr-gaia.yaml
+      - --app
+      - hr_showcase.app:create_app
+
+  hr-frontend:
+    image: node:22-alpine
+    restart: unless-stopped
+    working_dir: /workspace
+    environment:
+      HR_SHOWCASE_API_TARGET: http://hr-api:8000
+      VITE_GAIA_API_KEY: ${GAIA_API_KEY:-gaia-production-like-key}
+      VITE_GAIA_RUN_MODE: sandbox
+    volumes:
+      - ../../../showcase/gaia-hr-suite/frontend:/workspace:ro
+      - hr-frontend-node-modules:/workspace/node_modules
+    depends_on:
+      hr-api:
+        condition: service_healthy
+    command:
+      - sh
+      - -c
+      - npm ci --no-audit --no-fund && npm run dev -- --host 0.0.0.0 --base /hr/
+  temporal-ui:
+    environment:
+      TEMPORAL_CORS_ORIGINS: http://127.0.0.1:${GAIA_TEMPORAL_UI_PORT:-8080}
+    ports: !override
+      - "127.0.0.1:${GAIA_TEMPORAL_UI_PORT:-8080}:8080"
+
+  langfuse-web:
+    environment:
+      NEXTAUTH_URL: http://127.0.0.1:${GAIA_LANGFUSE_PORT:-3000}
+    ports: !override
+      - "127.0.0.1:${GAIA_LANGFUSE_PORT:-3000}:3000"
+
+  docs:
+    build:
+      context: ../..
+      dockerfile: infra/dev-full/Dockerfile.docs
+    image: gaia-docs:dev-full
+    restart: unless-stopped
+    volumes:
+      - ../../mkdocs.yml:/workspace/mkdocs.yml:ro
+      - ../../developer-docs:/workspace/developer-docs:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:4175/', timeout=3)"]
+      interval: 3s
+      timeout: 5s
+      retries: 30
+
+  gateway:
+    depends_on:
+      hr-api:
+        condition: service_healthy
+      hr-frontend:
+        condition: service_started
+      console:
+        condition: service_healthy
+      docs:
+        condition: service_healthy
+    environment:
+      NGINX_ENVSUBST_FILTER: ^GAIA_API_KEY$$
+      GAIA_API_KEY: ${GAIA_API_KEY:-gaia-production-like-key}
+    volumes: !override
+      - ../dev-full/gateway.conf.template:/etc/nginx/templates/default.conf.template:ro
+    ports: !override
+      - "127.0.0.1:${GAIA_GATEWAY_PORT:-4181}:8080"
+
+  console:
+    depends_on: !reset {}
+    volumes:
+      - ../dev-full/console.conf:/etc/nginx/conf.d/default.conf:ro
+    ports: !override []
+
+volumes:
+  gaia-redis-data:
+  hr-showcase-data:
+  hr-frontend-node-modules:

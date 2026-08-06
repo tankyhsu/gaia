@@ -1,0 +1,361 @@
+name: gaia-production-like
+
+x-gaia-environment: &gaia-environment
+  GAIA_CONFIG_PATH: /app/infra/production-like/gaia.yaml
+  GAIA_API_KEY: ${GAIA_API_KEY:-gaia-production-like-key}
+  GAIA_POSTGRES_URL: postgresql://gaia:${GAIA_POSTGRES_PASSWORD:-gaia-production-like-password}@gaia-postgres:5432/gaia
+  GAIA_DATABASE_URL: postgresql://gaia:${GAIA_POSTGRES_PASSWORD:-gaia-production-like-password}@gaia-postgres:5432/gaia
+  GAIA_PROJECT_ROOT: /app
+  GAIA_DEVTOOLS_ENABLED: "false"
+  LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-pk-lf-gaia-production-like}
+  LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-sk-lf-gaia-production-like}
+
+x-gaia-depends-on: &gaia-depends-on
+  gaia-migrate:
+    condition: service_completed_successfully
+  temporal-initialize:
+    condition: service_completed_successfully
+  langfuse-web:
+    condition: service_healthy
+
+x-gaia-service: &gaia-service
+  build:
+    context: ../..
+    dockerfile: Dockerfile
+  image: gaia-framework:production-like
+  restart: unless-stopped
+  environment: *gaia-environment
+  depends_on: *gaia-depends-on
+
+services:
+  gaia-postgres:
+    image: pgvector/pgvector:pg17
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: gaia
+      POSTGRES_USER: gaia
+      POSTGRES_PASSWORD: ${GAIA_POSTGRES_PASSWORD:-gaia-production-like-password}
+    volumes:
+      - gaia-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gaia -d gaia"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  gaia-migrate:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    image: gaia-framework:production-like
+    restart: "no"
+    environment: *gaia-environment
+    depends_on:
+      gaia-postgres:
+        condition: service_healthy
+    command:
+      - gaia
+      - migrate
+      - --config
+      - /app/infra/production-like/gaia.yaml
+
+  temporal-postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: temporal
+      POSTGRES_PASSWORD: ${TEMPORAL_POSTGRES_PASSWORD:-temporal-production-like-password}
+    volumes:
+      - temporal-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U temporal"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  temporal-schema:
+    image: temporalio/admin-tools:1.31.2
+    restart: "no"
+    environment:
+      DB: postgres12
+      DB_PORT: "5432"
+      POSTGRES_USER: temporal
+      POSTGRES_PWD: ${TEMPORAL_POSTGRES_PASSWORD:-temporal-production-like-password}
+      POSTGRES_SEEDS: temporal-postgres
+      SQL_PASSWORD: ${TEMPORAL_POSTGRES_PASSWORD:-temporal-production-like-password}
+    depends_on:
+      temporal-postgres:
+        condition: service_healthy
+    volumes:
+      - ./temporal:/scripts:ro
+    entrypoint: ["/bin/sh", "/scripts/setup-postgres.sh"]
+
+  temporal:
+    image: temporalio/server:1.31.2
+    restart: unless-stopped
+    environment:
+      DB: postgres12
+      DB_PORT: "5432"
+      POSTGRES_USER: temporal
+      POSTGRES_PWD: ${TEMPORAL_POSTGRES_PASSWORD:-temporal-production-like-password}
+      POSTGRES_SEEDS: temporal-postgres
+      BIND_ON_IP: 0.0.0.0
+      DYNAMIC_CONFIG_FILE_PATH: config/dynamicconfig/production-like.yaml
+    depends_on:
+      temporal-schema:
+        condition: service_completed_successfully
+    ports:
+      - "127.0.0.1:7233:7233"
+    volumes:
+      - ./temporal/dynamicconfig.yaml:/etc/temporal/config/dynamicconfig/production-like.yaml:ro
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "7233"]
+      interval: 3s
+      timeout: 3s
+      retries: 40
+      start_period: 10s
+
+  temporal-initialize:
+    image: temporalio/admin-tools:1.31.2
+    restart: "no"
+    environment:
+      TEMPORAL_ADDRESS: temporal:7233
+      TEMPORAL_NAMESPACE: gaia-production-like
+    depends_on:
+      temporal:
+        condition: service_healthy
+    volumes:
+      - ./temporal:/scripts:ro
+    entrypoint: ["/bin/sh", "/scripts/initialize.sh"]
+
+  temporal-ui:
+    image: temporalio/ui:2.50.1
+    restart: unless-stopped
+    environment:
+      TEMPORAL_ADDRESS: temporal:7233
+      TEMPORAL_CORS_ORIGINS: http://localhost:4180
+    depends_on:
+      temporal:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8080:8080"
+
+  langfuse-postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: langfuse
+      POSTGRES_USER: langfuse
+      POSTGRES_PASSWORD: ${LANGFUSE_POSTGRES_PASSWORD:-langfuse-production-like-password}
+      TZ: UTC
+      PGTZ: UTC
+    volumes:
+      - langfuse-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U langfuse -d langfuse"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  langfuse-clickhouse:
+    image: clickhouse/clickhouse-server:25.6-alpine
+    restart: unless-stopped
+    user: "101:101"
+    environment:
+      CLICKHOUSE_DB: default
+      CLICKHOUSE_USER: clickhouse
+      CLICKHOUSE_PASSWORD: ${LANGFUSE_CLICKHOUSE_PASSWORD:-langfuse-production-like-clickhouse}
+    volumes:
+      - langfuse-clickhouse-data:/var/lib/clickhouse
+      - langfuse-clickhouse-logs:/var/log/clickhouse-server
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:8123/ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  langfuse-redis:
+    image: redis:7.4-alpine
+    restart: unless-stopped
+    command:
+      - redis-server
+      - --requirepass
+      - ${LANGFUSE_REDIS_PASSWORD:-langfuse-production-like-redis}
+      - --maxmemory-policy
+      - noeviction
+    volumes:
+      - langfuse-redis-data:/data
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - redis-cli -a "$${LANGFUSE_REDIS_PASSWORD}" ping
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    environment:
+      LANGFUSE_REDIS_PASSWORD: ${LANGFUSE_REDIS_PASSWORD:-langfuse-production-like-redis}
+
+  langfuse-minio:
+    image: cgr.dev/chainguard/minio:latest
+    restart: unless-stopped
+    entrypoint: ["/bin/sh", "-c"]
+    command: ['mkdir -p /data/langfuse && minio server --address ":9000" --console-address ":9001" /data']
+    environment:
+      MINIO_ROOT_USER: minio
+      MINIO_ROOT_PASSWORD: ${LANGFUSE_MINIO_PASSWORD:-langfuse-production-like-minio}
+    volumes:
+      - langfuse-minio-data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 3s
+      timeout: 5s
+      retries: 30
+
+  langfuse-worker:
+    image: langfuse/langfuse-worker:${LANGFUSE_VERSION:-3}
+    restart: unless-stopped
+    depends_on: &langfuse-depends-on
+      langfuse-postgres:
+        condition: service_healthy
+      langfuse-clickhouse:
+        condition: service_healthy
+      langfuse-redis:
+        condition: service_healthy
+      langfuse-minio:
+        condition: service_healthy
+    environment: &langfuse-environment
+      NEXTAUTH_URL: http://localhost:3000
+      DATABASE_URL: postgresql://langfuse:${LANGFUSE_POSTGRES_PASSWORD:-langfuse-production-like-password}@langfuse-postgres:5432/langfuse
+      SALT: ${LANGFUSE_SALT:-gaia-production-like-salt}
+      ENCRYPTION_KEY: ${LANGFUSE_ENCRYPTION_KEY:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}
+      TELEMETRY_ENABLED: "false"
+      CLICKHOUSE_MIGRATION_URL: clickhouse://clickhouse:${LANGFUSE_CLICKHOUSE_PASSWORD:-langfuse-production-like-clickhouse}@langfuse-clickhouse:9000
+      CLICKHOUSE_URL: http://langfuse-clickhouse:8123
+      CLICKHOUSE_USER: clickhouse
+      CLICKHOUSE_PASSWORD: ${LANGFUSE_CLICKHOUSE_PASSWORD:-langfuse-production-like-clickhouse}
+      CLICKHOUSE_CLUSTER_ENABLED: "false"
+      REDIS_HOST: langfuse-redis
+      REDIS_PORT: "6379"
+      REDIS_AUTH: ${LANGFUSE_REDIS_PASSWORD:-langfuse-production-like-redis}
+      REDIS_TLS_ENABLED: "false"
+      LANGFUSE_S3_EVENT_UPLOAD_BUCKET: langfuse
+      LANGFUSE_S3_EVENT_UPLOAD_REGION: auto
+      LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID: minio
+      LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY: ${LANGFUSE_MINIO_PASSWORD:-langfuse-production-like-minio}
+      LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT: http://langfuse-minio:9000
+      LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE: "true"
+      LANGFUSE_S3_MEDIA_UPLOAD_BUCKET: langfuse
+      LANGFUSE_S3_MEDIA_UPLOAD_REGION: auto
+      LANGFUSE_S3_MEDIA_UPLOAD_ACCESS_KEY_ID: minio
+      LANGFUSE_S3_MEDIA_UPLOAD_SECRET_ACCESS_KEY: ${LANGFUSE_MINIO_PASSWORD:-langfuse-production-like-minio}
+      LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT: http://langfuse-minio:9000
+      LANGFUSE_S3_MEDIA_UPLOAD_FORCE_PATH_STYLE: "true"
+
+  langfuse-web:
+    image: langfuse/langfuse:${LANGFUSE_VERSION:-3}
+    restart: unless-stopped
+    depends_on: *langfuse-depends-on
+    environment:
+      <<: *langfuse-environment
+      NEXTAUTH_SECRET: ${LANGFUSE_NEXTAUTH_SECRET:-gaia-production-like-nextauth-secret}
+      LANGFUSE_INIT_ORG_ID: gaia-production-like
+      LANGFUSE_INIT_ORG_NAME: Gaia Production Like
+      LANGFUSE_INIT_PROJECT_ID: gaia-production-like
+      LANGFUSE_INIT_PROJECT_NAME: Gaia Production Like
+      LANGFUSE_INIT_PROJECT_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-pk-lf-gaia-production-like}
+      LANGFUSE_INIT_PROJECT_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-sk-lf-gaia-production-like}
+      LANGFUSE_INIT_USER_EMAIL: gaia@example.local
+      LANGFUSE_INIT_USER_NAME: Gaia Operator
+      LANGFUSE_INIT_USER_PASSWORD: gaia-production-like-password
+    ports:
+      - "127.0.0.1:3000:3000"
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - wget --no-verbose --tries=1 --spider "http://$$(hostname -i):3000/api/public/health"
+      interval: 5s
+      timeout: 5s
+      retries: 60
+      start_period: 20s
+
+  api-a:
+    <<: *gaia-service
+    command: ["uvicorn", "examples.controlled_task.app:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000"]
+    healthcheck: &gaia-api-health
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request; urllib.request.urlopen('http://localhost:8000/health/ready', timeout=3)
+      interval: 3s
+      timeout: 5s
+      retries: 30
+
+  api-b:
+    <<: *gaia-service
+    command: ["uvicorn", "examples.controlled_task.app:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000"]
+    healthcheck: *gaia-api-health
+
+  worker-a:
+    <<: *gaia-service
+    command:
+      - gaia
+      - worker
+      - --config
+      - /app/infra/production-like/gaia.yaml
+      - --app
+      - examples.controlled_task.app:create_app
+
+  worker-b:
+    <<: *gaia-service
+    command:
+      - gaia
+      - worker
+      - --config
+      - /app/infra/production-like/gaia.yaml
+      - --app
+      - examples.controlled_task.app:create_app
+
+  gateway:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    depends_on:
+      api-a:
+        condition: service_healthy
+      api-b:
+        condition: service_healthy
+    volumes:
+      - ./gateway.conf:/etc/nginx/conf.d/default.conf:ro
+    ports:
+      - "127.0.0.1:8088:8080"
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:8080/health/live"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  console:
+    build:
+      context: ../../apps/web
+      dockerfile: Dockerfile
+    image: gaia-console:production-like
+    restart: unless-stopped
+    depends_on:
+      gateway:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:4180:80"
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1/"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+volumes:
+  gaia-postgres-data:
+  temporal-postgres-data:
+  langfuse-postgres-data:
+  langfuse-clickhouse-data:
+  langfuse-clickhouse-logs:
+  langfuse-redis-data:
+  langfuse-minio-data:

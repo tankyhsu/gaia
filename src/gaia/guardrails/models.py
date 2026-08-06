@@ -7,7 +7,7 @@ from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from gaia.sdk.guardrail import GuardrailAction, GuardrailStage
+from gaia.spi.guardrail import GuardrailAction, GuardrailStage
 
 
 class GuardrailEvaluationStatus(StrEnum):

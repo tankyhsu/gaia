@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 
-from gaia.sdk.rag import DocumentChunk, ParsedDocument
+from gaia.spi.rag import DocumentChunk, ParsedDocument
 
 
 class FixedWindowChunker:

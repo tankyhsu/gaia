@@ -1,5 +1,5 @@
 from examples.controlled_task.context import MockContextProvider
-from gaia.sdk.context import ContextQuery, RunSession
+from gaia.spi.context import ContextQuery, RunSession
 
 
 async def test_mock_context_returns_versioned_evidence() -> None:

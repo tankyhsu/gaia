@@ -9,9 +9,10 @@ from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any
+from typing import Any, TypeVar
 
 from gaia.actuator.models import ActuatorCondition, ActuatorSnapshot
 from gaia.components.core import ComponentDescriptor, ComponentRegistry
@@ -24,6 +25,51 @@ from gaia.starters import (
     GaiaStarter,
     resolve_imported_starter,
 )
+
+T = TypeVar("T")
+
+
+def _framework_version() -> str:
+    """Resolve the installed `gaia-framework` package version.
+
+    Falls back to a clearly-marked development sentinel when the package is not
+    installed (e.g. running straight from a source checkout without `pip install`/
+    `uv sync` having registered distribution metadata) so callers never see a
+    version literal that silently drifts from `pyproject.toml`.
+    """
+
+    try:
+        return version("gaia-framework")
+    except PackageNotFoundError:
+        return "0.0.0+dev"
+
+
+def _matches_expected(instance: Any, expected: type) -> bool:
+    """Check whether `instance` satisfies the `expected` port type.
+
+    `isinstance()` works directly for concrete classes and for `Protocol`
+    subclasses decorated with `@runtime_checkable`. Several SPI ports (for
+    example `gaia.spi.model.ModelProvider`) are plain structural `Protocol`s
+    without that decorator, so `isinstance()` raises `TypeError` for them. For
+    that case we fall back to the same attribute-presence check that
+    `@runtime_checkable` itself performs under the hood (it does not verify
+    method signatures either): every public attribute declared on the
+    protocol must be present on the instance. This gives real verification
+    for undecorated ports without requiring every SPI Protocol to add
+    `@runtime_checkable` just to be usable as `get_component`'s `expected`.
+    """
+
+    try:
+        return isinstance(instance, expected)
+    except TypeError:
+        protocol_attrs = {
+            name
+            for klass in getattr(expected, "__mro__", (expected,))
+            if getattr(klass, "_is_protocol", False)
+            for name in vars(klass)
+            if not name.startswith("_")
+        }
+        return all(hasattr(instance, name) for name in protocol_attrs)
 
 
 class ApplicationState(StrEnum):
@@ -122,7 +168,7 @@ class GaiaApplication:
             config_hash=self.config.stable_hash(),
             components=MappingProxyType({}),
             descriptors=descriptors,
-            framework_version="0.1.0",
+            framework_version=_framework_version(),
             application_version=self.config.application.version,
             started_at=None,
             origins=MappingProxyType(dict(self._origins)),
@@ -174,13 +220,28 @@ class GaiaApplication:
                 )
             self.state = ApplicationState.STOPPED
 
-    def get_component(self, component_id: str) -> Any:
+    def get_component(self, component_id: str, expected: type[T] | None = None) -> Any:
+        """Look up a started component by id.
+
+        Pass `expected` to assert the port a caller genuinely requires; a component
+        registered under `component_id` that does not satisfy `expected` raises a
+        `TypeError` carrying the `COMPONENT_TYPE_MISMATCH` code instead of handing
+        back an instance the caller cannot actually use. See `_matches_expected` for
+        how structural `Protocol` ports without `@runtime_checkable` are handled.
+        """
+
         if self.state != ApplicationState.STARTED or self._context is None:
             raise RuntimeError("APPLICATION_NOT_STARTED")
         try:
-            return self._context.components[component_id]
+            component = self._context.components[component_id]
         except KeyError as error:
             raise KeyError(f"COMPONENT_NOT_FOUND:{component_id}") from error
+        if expected is not None and not _matches_expected(component, expected):
+            raise TypeError(
+                f"COMPONENT_TYPE_MISMATCH:{component_id} expected "
+                f"{expected.__name__}, got {type(component).__name__}"
+            )
+        return component
 
     @asynccontextmanager
     async def lifespan(self) -> AsyncIterator[GaiaApplicationContext]:

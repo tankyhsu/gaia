@@ -109,6 +109,13 @@ _CATALOG: dict[str, ErrorDescriptor] = {
         False,
         "Use an approved environment and write policy; do not bypass the runtime boundary.",
     ),
+    ErrorCode.DURABLE_EXECUTION_REQUIRED.value: ErrorDescriptor(
+        "This run needs durable orchestration that the in-process provider does not perform.",
+        ErrorCategory.CONFIGURATION,
+        False,
+        "Select runtime.execution.provider=temporal for long-running workflows, human waits, "
+        "critical writes, or recovery across process restarts.",
+    ),
     ErrorCode.CONTEXT_INSUFFICIENT.value: ErrorDescriptor(
         "The available context is not sufficient for a reliable result.",
         ErrorCategory.RUNTIME,
@@ -127,11 +134,23 @@ _CATALOG: dict[str, ErrorDescriptor] = {
         True,
         "Check the model endpoint and credentials, then retry after service recovery.",
     ),
+    ErrorCode.MODEL_OUTPUT_INVALID.value: ErrorDescriptor(
+        "The model did not produce a valid structured result within the correction budget.",
+        ErrorCategory.RUNTIME,
+        False,
+        "Inspect the output schema, validator decision, Prompt, and model-call budget.",
+    ),
     ErrorCode.TOOL_TIMEOUT.value: ErrorDescriptor(
         "The external tool did not respond before the timeout.",
         ErrorCategory.EXTERNAL_DEPENDENCY,
         True,
         "Check tool health and latency before retrying.",
+    ),
+    ErrorCode.GUARDRAIL_BLOCKED.value: ErrorDescriptor(
+        "A configured safety rule blocked this request or generated content.",
+        ErrorCategory.POLICY,
+        False,
+        "Inspect the guardrail decision, then correct the request or scanner policy.",
     ),
     ErrorCode.SIDE_EFFECT_UNKNOWN.value: ErrorDescriptor(
         "The write result is unknown and automatic retry is unsafe.",
@@ -151,11 +170,47 @@ _CATALOG: dict[str, ErrorDescriptor] = {
         False,
         "Review the run and create a new approval request if the action is still valid.",
     ),
+    ErrorCode.GATE_NOT_PENDING.value: ErrorDescriptor(
+        "This approval gate has already been decided, expired, or is unknown.",
+        ErrorCategory.POLICY,
+        False,
+        "Re-read the gate before deciding; an earlier decision is never overwritten.",
+    ),
+    ErrorCode.GATE_DECISION_UNVERIFIED.value: ErrorDescriptor(
+        "The write was gated on human approval that Gaia cannot verify.",
+        ErrorCategory.POLICY,
+        False,
+        (
+            "The Workflow reported an approval that Gaia's audit projection does "
+            "not hold. Approve through the Gaia API; a decision sent straight to "
+            "the Temporal namespace is not an authenticated approval. Treat an "
+            "unexplained occurrence as a possible forged decision and review who "
+            "can reach that namespace."
+        ),
+    ),
     ErrorCode.BUDGET_EXCEEDED.value: ErrorDescriptor(
         "The run exceeded its configured execution budget.",
         ErrorCategory.RUNTIME,
         False,
         "Inspect step, model-call, and duration limits before adjusting the policy.",
+    ),
+    ErrorCode.HANDOFF_NOT_ALLOWED.value: ErrorDescriptor(
+        "The current Agent is not allowed to transfer work to the requested target.",
+        ErrorCategory.POLICY,
+        False,
+        "Review the explicit Agent handoff allowlist.",
+    ),
+    ErrorCode.HANDOFF_TARGET_NOT_FOUND.value: ErrorDescriptor(
+        "The requested Agent handoff target is not registered.",
+        ErrorCategory.CONFIGURATION,
+        False,
+        "Register the target handler or correct the handoff target ID.",
+    ),
+    ErrorCode.CONTINUATION_HANDLER_NOT_FOUND.value: ErrorDescriptor(
+        "The requested post-action continuation handler is not registered.",
+        ErrorCategory.CONFIGURATION,
+        False,
+        "Register the continuation handler or correct the continue_with value.",
     ),
     ErrorCode.RUN_NOT_RESUMABLE.value: ErrorDescriptor(
         "The run is not in a resumable state.",
@@ -168,6 +223,31 @@ _CATALOG: dict[str, ErrorDescriptor] = {
         ErrorCategory.INTERNAL,
         True,
         "Use the trace ID and diagnostic bundle to identify the failing component.",
+    ),
+    ErrorCode.RUNTIME_ILLEGAL_TRANSITION.value: ErrorDescriptor(
+        "The runtime attempted a state transition that is not on the allowed list.",
+        ErrorCategory.INTERNAL,
+        False,
+        "This indicates a runtime defect. Use the trace ID to inspect the event log and "
+        "report the offending transition.",
+    ),
+    ErrorCode.IDENTITY_MISMATCH.value: ErrorDescriptor(
+        "The authenticated caller identity does not match RunRequest.user.",
+        ErrorCategory.CONFLICT,
+        False,
+        "Submit RunRequest.user matching the identity resolved by the configured "
+        "AuthnProvider, or omit fields the provider already establishes; the server "
+        "will not silently substitute the authenticated identity for a conflicting "
+        "claim.",
+    ),
+    ErrorCode.POLICY_OVERRIDE_INVALID.value: ErrorDescriptor(
+        "A configured policy override would loosen a scenario's policy instead of "
+        "tightening it.",
+        ErrorCategory.CONFIGURATION,
+        False,
+        "Fix the runtime.policy_overrides entry so every field only tightens the "
+        "scenario's baseline policy, then redeploy; overrides are rejected at "
+        "application startup, not at request time.",
     ),
     "RUNTIME_UNAVAILABLE": ErrorDescriptor(
         "This application has not installed runtime dependencies.",
@@ -228,6 +308,74 @@ _CATALOG: dict[str, ErrorDescriptor] = {
         ErrorCategory.CONFLICT,
         False,
         "Reconcile the command and target-system state before attempting another write.",
+    ),
+    "SCENARIO_MODULE_NOT_FOUND": ErrorDescriptor(
+        "A module listed under scenarios.modules could not be imported.",
+        ErrorCategory.CONFIGURATION,
+        False,
+        "Install the project so its package is importable (e.g. `uv add --editable` / "
+        "`pip install -e` your application, then `uv sync`), or correct the module path "
+        "in scenarios.modules if it is simply misspelled.",
+    ),
+    "SCENARIO_MODULE_IMPORT_FAILED": ErrorDescriptor(
+        "A module listed under scenarios.modules exists but raised an error while it was "
+        "being imported.",
+        ErrorCategory.CONFIGURATION,
+        False,
+        "Fix the module's own import-time code or install its missing dependency; the "
+        "module path in scenarios.modules is correct and does not need to change.",
+    ),
+    "SCENARIO_DUPLICATE": ErrorDescriptor(
+        "The same scenario_id is declared by more than one discovered scenario function.",
+        ErrorCategory.CONFIGURATION,
+        False,
+        "Rename or remove the duplicate @scenario declaration so each scenario_id is unique "
+        "across scenarios.modules.",
+    ),
+    "SCENARIO_TOOL_DUPLICATE": ErrorDescriptor(
+        "The same tool name is declared by more than one discovered tool function.",
+        ErrorCategory.CONFIGURATION,
+        False,
+        "Rename or remove the duplicate @read_tool or @write_tool declaration so each tool "
+        "name is unique across scenarios.modules.",
+    ),
+    "AGENT_HANDLER_DUPLICATE": ErrorDescriptor(
+        "The same agent_id is declared by more than one discovered @agent_handler function.",
+        ErrorCategory.CONFIGURATION,
+        False,
+        "Rename or remove the duplicate @agent_handler declaration so each agent_id is "
+        "unique across scenarios.modules.",
+    ),
+    "CONTINUATION_HANDLER_DUPLICATE": ErrorDescriptor(
+        "The same continuation name is declared by more than one discovered "
+        "@continuation_handler function.",
+        ErrorCategory.CONFIGURATION,
+        False,
+        "Rename or remove the duplicate @continuation_handler declaration so each name is "
+        "unique across scenarios.modules.",
+    ),
+    "APPLICATION_NOT_STARTED": ErrorDescriptor(
+        "GaiaApplication.get_component was called before the application finished "
+        "starting.",
+        ErrorCategory.CONFIGURATION,
+        False,
+        "Call get_component only inside or after GaiaApplication.lifespan()/start() "
+        "has completed, not during configure().",
+    ),
+    "COMPONENT_NOT_FOUND": ErrorDescriptor(
+        "No component is registered under the requested component_id.",
+        ErrorCategory.CONFIGURATION,
+        False,
+        "Check the component_id and confirm the Starter that registers it is active "
+        "for the current profile and configuration.",
+    ),
+    "COMPONENT_TYPE_MISMATCH": ErrorDescriptor(
+        "The component registered under this component_id does not satisfy the "
+        "port type the caller required.",
+        ErrorCategory.CONFIGURATION,
+        False,
+        "Check which Starter registered this component_id and correct the "
+        "configuration so it provides the expected port implementation.",
     ),
 }
 

@@ -6,8 +6,8 @@ from pathlib import Path
 from typing import Any
 
 from gaia.rag import FixedWindowChunker, MemoryRagRepository, RagPipeline, Utf8TextParser
-from gaia.sdk.memory import MemoryItem
-from gaia.sdk.rag import (
+from gaia.spi.memory import MemoryItem
+from gaia.spi.rag import (
     DocumentAccess,
     DocumentSource,
     LoadedDocument,

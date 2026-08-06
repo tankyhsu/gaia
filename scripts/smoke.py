@@ -7,7 +7,7 @@ import os
 import urllib.request
 from uuid import uuid4
 
-BASE_URL = os.getenv("GAIA_BASE_URL", "http://localhost:8000").rstrip("/")
+BASE_URL = os.getenv("GAIA_BASE_URL", "http://127.0.0.1:8000").rstrip("/")
 API_KEY = os.getenv("GAIA_API_KEY", "gaia-dev-key")
 HEADERS = {"X-Gaia-Api-Key": API_KEY, "Content-Type": "application/json"}
 

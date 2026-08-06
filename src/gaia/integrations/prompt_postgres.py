@@ -18,7 +18,7 @@ from gaia.persistence.models import (
     PromptReleaseRecord,
     PromptVersionRecord,
 )
-from gaia.sdk.prompt import (
+from gaia.spi.prompt import (
     PromptArtifact,
     PromptLifecycleStatus,
     PromptRef,

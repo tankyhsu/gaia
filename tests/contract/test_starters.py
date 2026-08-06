@@ -53,6 +53,30 @@ def test_postgres_starter_defaults_preserve_nested_configuration_paths() -> None
         },
         "embedding": {"provider": "openai-compatible"},
     }
+    assert BUILTIN_STARTERS["rag-external-http"].defaults() == {
+        "rag": {"provider": "external-http"}
+    }
+
+
+async def test_external_http_rag_starter_builds_retriever() -> None:
+    config = GaiaApplicationConfig.model_validate(
+        {
+            "starters": ["rag-external-http"],
+            "rag": {
+                "provider": "external-http",
+                "base_url": "https://knowledge.example.com",
+            },
+        }
+    )
+
+    application = GaiaApplication(config)
+    configured = await application.configure()
+
+    assert [item.component_id for item in configured.descriptors] == ["rag-external-http"]
+    async with application.lifespan() as started:
+        assert started.components["rag-external-http"].__class__.__name__ == (
+            "ExternalHttpRetriever"
+        )
 
 
 async def test_prompt_file_starter_constructs_provider_without_reading_files(

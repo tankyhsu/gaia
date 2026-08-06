@@ -1,4 +1,5 @@
 import type {
+  DiagnosticBundle,
   HumanGate,
   ReplaySnapshot,
   PromptArtifact,
@@ -10,7 +11,9 @@ import type {
   RunEvent,
   RunGuardrailObservability,
   RunModelObservability,
+  RunPage,
   RunSnapshot,
+  RunToolObservability,
   RuntimeSummary,
 } from "./types";
 
@@ -65,12 +68,24 @@ export function getRun(runId: string): Promise<RunSnapshot> {
   return request(`/v1/runs/${encodeURIComponent(runId)}`);
 }
 
+// Newest-first, scoped to the caller's organization (see `GET /v1/runs` in
+// `gaia.api.app`). `cursor` is the opaque `next_cursor` from a previous page;
+// omit it to fetch the first page.
+export function listRuns(cursor?: string): Promise<RunPage> {
+  const query = cursor ? `?cursor=${encodeURIComponent(cursor)}` : "";
+  return request(`/v1/runs${query}`);
+}
+
 export function getEvents(runId: string): Promise<RunEvent[]> {
   return request(`/v1/runs/${encodeURIComponent(runId)}/events`);
 }
 
 export function getModelInvocations(runId: string): Promise<RunModelObservability> {
   return request(`/v1/runs/${encodeURIComponent(runId)}/model-invocations`);
+}
+
+export function getToolInvocations(runId: string): Promise<RunToolObservability> {
+  return request(`/v1/runs/${encodeURIComponent(runId)}/tool-invocations`);
 }
 
 export function getGuardrailDecisions(
@@ -81,6 +96,23 @@ export function getGuardrailDecisions(
 
 export function getGate(gateId: string): Promise<HumanGate> {
   return request(`/v1/human-gates/${encodeURIComponent(gateId)}`);
+}
+
+// Every HumanGate `runId` ever opened, oldest first -- the only way to name
+// an approver once a completed Run's in-flight gate references
+// (`pending_gate_id`, `action_plan[].gate_id`) are gone. See
+// `GET /v1/runs/{run_id}/human-gates` in `gaia.api.app`.
+export function getRunHumanGates(runId: string): Promise<HumanGate[]> {
+  return request(`/v1/runs/${encodeURIComponent(runId)}/human-gates`);
+}
+
+// The bundle is the only source of HumanGate ids for a *completed* run: once
+// a gate is decided, `RunSnapshot.pending_gate_id` is cleared and a completed
+// run's `action_plan` may be absent entirely, so those two sources alone
+// under-report gates that plainly happened. See `DiagnosticExporter.export`
+// in `src/gaia/diagnostics/bundle.py`.
+export function getDiagnosticBundle(runId: string): Promise<DiagnosticBundle> {
+  return request(`/v1/diagnostics/runs/${encodeURIComponent(runId)}/bundle`);
 }
 
 export function decideGate(gateId: string, decision: "approved" | "rejected") {

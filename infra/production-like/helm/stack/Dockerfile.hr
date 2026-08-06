@@ -1,0 +1,5 @@
+FROM gaia-framework:production-like
+
+COPY showcase/gaia-hr-suite/backend /hr
+
+ENV PYTHONPATH=/hr

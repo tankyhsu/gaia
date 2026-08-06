@@ -8,7 +8,7 @@ from typing import Any
 
 import yaml
 
-from gaia.sdk.prompt import PromptArtifact, PromptRef
+from gaia.spi.prompt import PromptArtifact, PromptRef
 
 
 class PromptNotFoundError(LookupError):

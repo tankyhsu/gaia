@@ -12,10 +12,15 @@ from gaia.observability.models import (
     ModelInvocationSummary,
     ModelUsage,
     RunModelObservability,
+    RunToolObservability,
+    ToolInvocation,
+    ToolInvocationStatus,
+    ToolInvocationSummary,
 )
 from gaia.observability.opentelemetry import OpenTelemetryModelInvocationSink
 from gaia.observability.runtime import RuntimeObservabilityService
 from gaia.observability.store import SqlAlchemyModelInvocationStore
+from gaia.observability.tool_store import SqlAlchemyToolInvocationStore
 
 __all__ = [
     "CompositeModelInvocationSink",
@@ -28,6 +33,11 @@ __all__ = [
     "NullModelInvocationSink",
     "OpenTelemetryModelInvocationSink",
     "RunModelObservability",
+    "RunToolObservability",
     "RuntimeObservabilityService",
     "SqlAlchemyModelInvocationStore",
+    "SqlAlchemyToolInvocationStore",
+    "ToolInvocation",
+    "ToolInvocationStatus",
+    "ToolInvocationSummary",
 ]

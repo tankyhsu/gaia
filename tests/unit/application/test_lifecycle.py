@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -15,7 +16,14 @@ from gaia.components import (
     ComponentScope,
 )
 from gaia.config import GaiaApplicationConfig
-from gaia.sdk.prompt import PromptRef
+from gaia.spi.prompt import PromptRef
+
+# A deliberately simplified PEP 440 shape check (release segment, optional
+# pre/post/dev segments, optional local version) -- enough to catch "this is
+# not a version string at all" without depending on the `packaging` library.
+_PEP440_LIKE = re.compile(
+    r"^\d+(\.\d+)*((a|b|rc)\d+)?(\.post\d+)?(\.dev\d+)?(\+[a-zA-Z0-9]+(\.[a-zA-Z0-9]+)*)?$"
+)
 
 
 def resource_descriptor(
@@ -117,15 +125,70 @@ async def test_configure_has_no_resource_side_effects_and_lifespan_owns_scope() 
     assert events == ["enter", "exit"]
 
 
+async def test_get_component_expected_type_matches_and_mismatches() -> None:
+    """E1: `expected` asserts the port a caller genuinely requires."""
+
+    class Widget:
+        pass
+
+    registry = ComponentRegistry()
+
+    @asynccontextmanager
+    async def widget_resource() -> AsyncIterator[Widget]:
+        yield Widget()
+
+    registry.register_resource(
+        resource_descriptor("widget", kind=ComponentKind.TOOL),
+        lambda _components: widget_resource(),
+    )
+    application = GaiaApplication(GaiaApplicationConfig(), registry)
+
+    async with application.lifespan():
+        # Correct type: passes through unchanged.
+        widget = application.get_component("widget", expected=Widget)
+        assert isinstance(widget, Widget)
+        # No `expected`: unchanged legacy behaviour, no type assertion at all.
+        assert isinstance(application.get_component("widget"), Widget)
+        # Wrong type: a catalogued TypeError, not a silently-wrong instance.
+        with pytest.raises(TypeError, match="COMPONENT_TYPE_MISMATCH:widget"):
+            application.get_component("widget", expected=str)
+
+
 async def test_actuator_snapshot_uses_redacted_config_and_context() -> None:
     application = GaiaApplication(GaiaApplicationConfig())
     await application.configure()
     snapshot = application.actuator_snapshot()
     assert snapshot.application_name == "gaia-app"
     assert snapshot.state == "configured"
-    assert snapshot.framework_version == "0.1.0"
+    # E2: framework_version comes from installed package metadata now, not a
+    # hand-typed literal -- assert the semantic property (non-empty, PEP
+    # 440 shaped) instead of a specific value that would drift from
+    # pyproject.toml.
+    assert snapshot.framework_version
+    assert _PEP440_LIKE.match(snapshot.framework_version)
     assert snapshot.conditions
     assert snapshot.config["model"]["api_key"] is None
+
+
+def test_framework_version_falls_back_when_package_metadata_is_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """E2: `_framework_version` reads installed package metadata, not a literal,
+
+    and degrades to a clearly-marked dev sentinel rather than crashing when
+    the package isn't installed (e.g. a bare source checkout).
+    """
+
+    from importlib.metadata import PackageNotFoundError
+
+    import gaia.application.core as core_module
+
+    def _raise(_name: str) -> str:
+        raise PackageNotFoundError
+
+    monkeypatch.setattr(core_module, "version", _raise)
+
+    assert core_module._framework_version() == "0.0.0+dev"
 
 
 async def test_from_config_autoconfigures_framework_components(tmp_path: Path) -> None:
@@ -149,11 +212,7 @@ async def test_file_prompt_root_is_relative_to_config_file(
     prompt_dir = application_root / "prompts" / "hello"
     prompt_dir.mkdir(parents=True)
     (prompt_dir / "1.0.0.yaml").write_text(
-        "prompt_id: hello\n"
-        "version: 1.0.0\n"
-        "messages:\n"
-        "  - role: system\n"
-        "    content: Hello.\n"
+        "prompt_id: hello\nversion: 1.0.0\nmessages:\n  - role: system\n    content: Hello.\n"
     )
     config_path = application_root / "gaia.yaml"
     config_path.write_text("gaia:\n  prompt: {provider: file, root: prompts}\n")

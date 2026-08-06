@@ -55,29 +55,35 @@ def test_complete_public_change_satisfies_impact_policy() -> None:
         )
     )
 
-    assert change_set.validate_change(
-        impact,
-        {
-            "intent": "Expose a public API behavior",
-            "kind": "feature",
-            "exemptions": {},
-        },
-    ) == []
+    assert (
+        change_set.validate_change(
+            impact,
+            {
+                "intent": "Expose a public API behavior",
+                "kind": "feature",
+                "exemptions": {},
+            },
+        )
+        == []
+    )
 
 
 def test_internal_change_can_record_concrete_exemptions() -> None:
     impact = change_set.classify_paths(("scripts/internal_refactor.py",))
 
-    assert change_set.validate_change(
-        impact,
-        {
-            "intent": "Refactor internal developer automation",
-            "kind": "refactor",
-            "exemptions": {
-                "tests": "Covered by the existing script contract tests",
+    assert (
+        change_set.validate_change(
+            impact,
+            {
+                "intent": "Refactor internal developer automation",
+                "kind": "refactor",
+                "exemptions": {
+                    "tests": "Covered by the existing script contract tests",
+                },
             },
-        },
-    ) == []
+        )
+        == []
+    )
 
 
 def test_pipeline_change_requires_documentation_but_not_release_note() -> None:

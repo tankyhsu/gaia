@@ -14,7 +14,7 @@ from gaia.guardrails.models import (
     RunGuardrailObservability,
 )
 from gaia.persistence.models import GuardrailDecisionRecord
-from gaia.sdk.guardrail import GuardrailAction, GuardrailStage
+from gaia.spi.guardrail import GuardrailAction, GuardrailStage
 
 
 class SqlAlchemyGuardrailDecisionStore:

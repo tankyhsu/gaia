@@ -1,0 +1,70 @@
+# Hybrid/external overlay. No managed platform service starts unless selected
+# through GAIA_MANAGED_PROFILES, for example "--profile managed-postgres".
+services:
+  gaia-postgres:
+    profiles: ["managed-postgres"]
+  temporal-postgres:
+    profiles: ["managed-temporal"]
+  temporal-schema:
+    profiles: ["managed-temporal"]
+  temporal:
+    profiles: ["managed-temporal"]
+  temporal-initialize:
+    profiles: ["managed-temporal"]
+  temporal-ui:
+    profiles: ["managed-temporal"]
+  langfuse-postgres:
+    profiles: ["managed-langfuse"]
+  langfuse-clickhouse:
+    profiles: ["managed-langfuse"]
+  langfuse-redis:
+    profiles: ["managed-langfuse"]
+  langfuse-minio:
+    profiles: ["managed-langfuse"]
+  langfuse-worker:
+    profiles: ["managed-langfuse"]
+  langfuse-web:
+    profiles: ["managed-langfuse"]
+
+  gaia-migrate:
+    environment:
+      GAIA_CONFIG_PATH: /etc/gaia/gaia.yaml
+    depends_on: !reset {}
+    volumes:
+      - ${GAIA_CONFIG_FILE:?GAIA_CONFIG_FILE is required}:/etc/gaia/gaia.yaml:ro
+    command: ["gaia", "migrate", "--config", "/etc/gaia/gaia.yaml"]
+
+  api-a:
+    environment:
+      GAIA_CONFIG_PATH: /etc/gaia/gaia.yaml
+    depends_on: !override
+      gaia-migrate:
+        condition: service_completed_successfully
+    volumes:
+      - ${GAIA_CONFIG_FILE:?GAIA_CONFIG_FILE is required}:/etc/gaia/gaia.yaml:ro
+  api-b:
+    environment:
+      GAIA_CONFIG_PATH: /etc/gaia/gaia.yaml
+    depends_on: !override
+      gaia-migrate:
+        condition: service_completed_successfully
+    volumes:
+      - ${GAIA_CONFIG_FILE:?GAIA_CONFIG_FILE is required}:/etc/gaia/gaia.yaml:ro
+  worker-a:
+    environment:
+      GAIA_CONFIG_PATH: /etc/gaia/gaia.yaml
+    depends_on: !override
+      gaia-migrate:
+        condition: service_completed_successfully
+    volumes:
+      - ${GAIA_CONFIG_FILE:?GAIA_CONFIG_FILE is required}:/etc/gaia/gaia.yaml:ro
+    command: ["gaia", "worker", "--config", "/etc/gaia/gaia.yaml", "--app", "examples.controlled_task.app:create_app"]
+  worker-b:
+    environment:
+      GAIA_CONFIG_PATH: /etc/gaia/gaia.yaml
+    depends_on: !override
+      gaia-migrate:
+        condition: service_completed_successfully
+    volumes:
+      - ${GAIA_CONFIG_FILE:?GAIA_CONFIG_FILE is required}:/etc/gaia/gaia.yaml:ro
+    command: ["gaia", "worker", "--config", "/etc/gaia/gaia.yaml", "--app", "examples.controlled_task.app:create_app"]

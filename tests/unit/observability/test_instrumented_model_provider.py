@@ -12,7 +12,7 @@ from gaia.contracts.models import (
 )
 from gaia.observability import InstrumentedModelProvider
 from gaia.observability.models import ModelInvocation, ModelInvocationStatus
-from gaia.sdk.model import (
+from gaia.spi.model import (
     ModelCallContext,
     ModelMessage,
     ModelResult,

@@ -2,24 +2,31 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from typing import Literal
+from collections.abc import Awaitable, Callable
+from typing import Literal, cast
 
 from fastapi import APIRouter, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict
 
 from gaia.application import GaiaApplication
-from gaia.contracts.models import RunMode
+from gaia.contracts.models import RunMode, UserIdentity
 from gaia.integrations.prompt_files import FilePromptProvider
 from gaia.integrations.prompt_postgres import (
     PostgresPromptRegistry,
     PromptRegistryConflict,
     PromptRegistryNotFound,
 )
-from gaia.sdk.prompt import PromptArtifact, PromptRef
+from gaia.spi.prompt import PromptArtifact, PromptRef
 
-Authorization = Callable[[Request], JSONResponse | None]
+# Resolves the caller identity for one request: `(identity, None)` when the
+# request may proceed (`identity` is `None` for a trusted-service caller with
+# no end-user identity), or `(None, response)` with a 401 `JSONResponse` when
+# authentication failed. The Prompt workspace is not scoped to a single end
+# user's resources, so `identity` is accepted for symmetry with the rest of
+# the API surface (F1: no protected endpoint should discard it) but is not
+# itself consulted for an ownership decision here.
+Authorization = Callable[[Request], Awaitable[tuple[UserIdentity | None, JSONResponse | None]]]
 
 
 class DevtoolRequest(BaseModel):
@@ -61,16 +68,20 @@ def create_prompt_devtools_router(
     router = APIRouter(prefix="/devtools/prompts", tags=["devtools-prompts"])
 
     def registry_provider() -> PostgresPromptRegistry:
-        component = application.get_component("prompt-postgres")
-        if not isinstance(component, PostgresPromptRegistry):
-            raise HTTPException(status_code=409, detail="PROMPT_REGISTRY_UNAVAILABLE")
-        return component
+        try:
+            return cast(
+                PostgresPromptRegistry,
+                application.get_component("prompt-postgres", expected=PostgresPromptRegistry),
+            )
+        except TypeError:
+            raise HTTPException(status_code=409, detail="PROMPT_REGISTRY_UNAVAILABLE") from None
 
     @router.get("", response_model=PromptWorkspaceStatus)
     async def workspace_status(
         request: Request,
     ) -> PromptWorkspaceStatus | JSONResponse:
-        if unauthorized := authorize(request):
+        _, unauthorized = await authorize(request)
+        if unauthorized:
             return unauthorized
         provider = application.config.prompt.provider
         if provider == "disabled":
@@ -80,19 +91,22 @@ def create_prompt_devtools_router(
             )
 
         component_id = f"prompt-{provider}"
-        component = application.get_component(component_id)
         if provider == "file":
-            if not isinstance(component, FilePromptProvider):
+            try:
+                file_component = application.get_component(
+                    component_id, expected=FilePromptProvider
+                )
+            except TypeError:
                 raise HTTPException(
                     status_code=409,
                     detail="PROMPT_FILE_PROVIDER_UNAVAILABLE",
-                )
-            artifacts = await component.list_artifacts()
+                ) from None
+            artifacts = await file_component.list_artifacts()
             return PromptWorkspaceStatus(
                 provider=provider,
                 access="read_only",
                 component_id=component_id,
-                root=str(component.root),
+                root=str(file_component.root),
                 artifacts=tuple(
                     FilePromptSummary(
                         prompt_id=artifact.prompt_id,
@@ -104,11 +118,13 @@ def create_prompt_devtools_router(
                 ),
             )
 
-        if not isinstance(component, PostgresPromptRegistry):
+        try:
+            application.get_component(component_id, expected=PostgresPromptRegistry)
+        except TypeError:
             raise HTTPException(
                 status_code=409,
                 detail="PROMPT_REGISTRY_UNAVAILABLE",
-            )
+            ) from None
         return PromptWorkspaceStatus(
             provider=provider,
             access="read_write",
@@ -117,7 +133,8 @@ def create_prompt_devtools_router(
 
     @router.get("/{prompt_id}", response_model=None)
     async def inspect_prompt(request: Request, prompt_id: str) -> dict[str, object] | JSONResponse:
-        if unauthorized := authorize(request):
+        _, unauthorized = await authorize(request)
+        if unauthorized:
             return unauthorized
         registry = registry_provider()
         versions = await registry.versions(prompt_id)
@@ -134,7 +151,8 @@ def create_prompt_devtools_router(
         artifact: PromptArtifact,
         actor: str = Header(alias="X-Gaia-Actor", min_length=1),
     ) -> dict[str, object] | JSONResponse:
-        if unauthorized := authorize(request):
+        _, unauthorized = await authorize(request)
+        if unauthorized:
             return unauthorized
         try:
             version = await registry_provider().import_draft(artifact, actor=actor)
@@ -150,7 +168,8 @@ def create_prompt_devtools_router(
         body: PromptPublishRequest,
         actor: str = Header(alias="X-Gaia-Actor", min_length=1),
     ) -> dict[str, object] | JSONResponse:
-        if unauthorized := authorize(request):
+        _, unauthorized = await authorize(request)
+        if unauthorized:
             return unauthorized
         try:
             release = await registry_provider().publish(
@@ -171,7 +190,8 @@ def create_prompt_devtools_router(
         body: PromptRollbackRequest,
         actor: str = Header(alias="X-Gaia-Actor", min_length=1),
     ) -> dict[str, object] | JSONResponse:
-        if unauthorized := authorize(request):
+        _, unauthorized = await authorize(request)
+        if unauthorized:
             return unauthorized
         try:
             release = await registry_provider().rollback(

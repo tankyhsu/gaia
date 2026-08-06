@@ -5,7 +5,7 @@ from typing import Any
 
 from gaia.observability import OpenTelemetryModelInvocationSink
 from gaia.observability.models import ModelInvocation, ModelInvocationStatus
-from gaia.sdk.model import ModelUsage
+from gaia.spi.model import ModelUsage
 
 
 class Span:
@@ -77,7 +77,13 @@ async def test_otel_sink_emits_only_safe_attributes_and_metrics() -> None:
             request_ref="sha256:request",
             response_ref="sha256:response",
             status=ModelInvocationStatus.SUCCEEDED,
-            usage=ModelUsage(input_tokens=8, output_tokens=2, total_tokens=10),
+            usage=ModelUsage(
+                input_tokens=8,
+                output_tokens=2,
+                total_tokens=10,
+                estimated_cost=0.001,
+                currency="USD",
+            ),
             started_at=started,
             completed_at=started + timedelta(milliseconds=12),
             duration_ms=12,
@@ -85,7 +91,23 @@ async def test_otel_sink_emits_only_safe_attributes_and_metrics() -> None:
     )
 
     assert tracer.attributes["gaia.run.id"] == "run-1"
+    assert tracer.attributes["langfuse.observation.type"] == "generation"
+    assert tracer.attributes["langfuse.observation.model.name"] == "model"
+    assert tracer.attributes["gen_ai.usage.input_tokens"] == 8
+    assert tracer.attributes["gen_ai.usage.output_tokens"] == 2
+    assert tracer.attributes["gen_ai.usage.cost"] == 0.001
+    assert tracer.attributes["langfuse.observation.usage_details"] == (
+        '{"input":8,"output":2,"total":10}'
+    )
+    assert tracer.attributes["langfuse.observation.cost_details"] == (
+        '{"total":0.001}'
+    )
+    assert tracer.attributes["langfuse.observation.metadata.prompt_version"] == (
+        "summary:1.0.0"
+    )
     assert "request_ref" not in tracer.attributes
     assert "response_ref" not in tracer.attributes
+    assert "langfuse.observation.input" not in tracer.attributes
+    assert "langfuse.observation.output" not in tracer.attributes
     assert meter.instruments["gaia.model.calls"].values[0][0] == 1
     assert [item[0] for item in meter.instruments["gaia.model.tokens"].values] == [8, 2]

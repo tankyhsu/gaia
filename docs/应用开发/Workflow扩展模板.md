@@ -2,8 +2,9 @@
 
 ## 1. 边界
 
-Workflow 的 State、节点、条件路由和业务规则属于应用项目。Gaia 提供生成模板、Runtime 契约、
-Checkpoint、HumanGate、运行证据和测试入口，不提供任意流程的低代码 DSL。
+Workflow 的 State、节点、条件路由和业务规则属于应用项目。LangGraph 负责逻辑编排，
+Temporal 负责持久执行、HumanGate、重试和恢复；Gaia 提供生成模板、受控契约、应用装配、
+只读运行证据和测试入口，不提供任意流程的低代码 DSL。
 
 ## 2. 生成
 
@@ -40,5 +41,6 @@ uv run pytest -q tests/workflows
 uv run gaia check --config gaia.yaml
 ```
 
-需要人工确认或恢复时，使用 Gaia Runtime 和 HumanGate 契约。完整、可运行的接入参考仍是
-`examples/controlled_task`；参考应用只验证框架接口，不定义客户业务结构。
+需要人工确认时返回 Gaia HumanGate 契约，由 Temporal Workflow 等待 Update；需要恢复时依赖
+Temporal History 与 Activity Retry，不要在应用内另建恢复扫描器。完整、可运行的接入参考是
+`examples/controlled_task`，Worker 使用 `gaia worker --config ... --app ...` 启动。

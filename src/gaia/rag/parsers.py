@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from gaia.sdk.rag import LoadedDocument, ParsedDocument, ParsedSection
+from gaia.spi.rag import LoadedDocument, ParsedDocument, ParsedSection
 
 _TEXT_MEDIA_TYPES = {
     "text/plain",

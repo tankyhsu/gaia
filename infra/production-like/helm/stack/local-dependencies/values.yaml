@@ -1,0 +1,34 @@
+existingSecret: platform-data-auth
+
+postgres:
+  image: postgres:16-alpine
+  storageClassName: ""
+  temporal:
+    storage: 2Gi
+    resources:
+      requests:
+        cpu: 100m
+        memory: 192Mi
+      limits:
+        cpu: 750m
+        memory: 768Mi
+  gaia:
+    storage: 4Gi
+    resources:
+      requests:
+        cpu: 50m
+        memory: 128Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+
+redis:
+  image: valkey/valkey:8-alpine
+  storage: 2Gi
+  resources:
+    requests:
+      cpu: 25m
+      memory: 64Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi

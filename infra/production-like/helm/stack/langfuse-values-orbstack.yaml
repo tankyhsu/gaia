@@ -1,0 +1,125 @@
+langfuse:
+  salt:
+    secretKeyRef:
+      name: langfuse-core-secrets
+      key: salt
+  encryptionKey:
+    secretKeyRef:
+      name: langfuse-core-secrets
+      key: encryption-key
+  nextauth:
+    url: http://localhost:3000
+    secret:
+      secretKeyRef:
+        name: langfuse-core-secrets
+        key: nextauth-secret
+  additionalEnvFrom:
+    - secretRef:
+        name: langfuse-bootstrap
+  replicas: 1
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+  web:
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: "1"
+        memory: 2Gi
+    pod:
+      additionalEnv:
+        - name: NODE_OPTIONS
+          value: --max-old-space-size=1280
+    pdb:
+      create: false
+  worker:
+    pdb:
+      create: false
+
+postgresql:
+  deploy: true
+  auth:
+    username: postgres
+    database: postgres_langfuse
+    existingSecret: langfuse-postgres-auth
+    secretKeys:
+      userPasswordKey: password
+      adminPasswordKey: password
+  primary:
+    persistence:
+      size: 4Gi
+    resources:
+      requests:
+        cpu: 100m
+        memory: 192Mi
+      limits:
+        cpu: 750m
+        memory: 768Mi
+
+redis:
+  deploy: true
+  auth:
+    username: default
+    existingSecret: langfuse-valkey-auth
+    existingSecretPasswordKey: password
+  primary:
+    persistence:
+      size: 2Gi
+    resources:
+      requests:
+        cpu: 50m
+        memory: 128Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+
+clickhouse:
+  deploy: true
+  replicaCount: 1
+  clusterEnabled: false
+  resourcesPreset: none
+  resources:
+    requests:
+      cpu: 200m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 2Gi
+  persistence:
+    size: 8Gi
+  auth:
+    username: default
+    existingSecret: langfuse-clickhouse-auth
+    existingSecretKey: password
+  zookeeper:
+    enabled: false
+
+s3:
+  deploy: true
+  accessKeyId:
+    secretKeyRef:
+      name: langfuse-minio-auth
+      key: root-user
+  secretAccessKey:
+    secretKeyRef:
+      name: langfuse-minio-auth
+      key: root-password
+  auth:
+    existingSecret: langfuse-minio-auth
+    rootUserSecretKey: root-user
+    rootPasswordSecretKey: root-password
+  persistence:
+    size: 4Gi
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi

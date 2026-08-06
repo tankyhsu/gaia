@@ -151,9 +151,7 @@ def staged_paths_outside_change_set() -> tuple[str, ...]:
 def working_fingerprint() -> str:
     digest = hashlib.sha256()
     pathspecs = (PROJECT_PREFIX.rstrip("/") or ".", *MANAGED_ROOT_PATHS)
-    digest.update(
-        _git_repo("diff", "--binary", "HEAD", "--", *pathspecs).stdout.encode()
-    )
+    digest.update(_git_repo("diff", "--binary", "HEAD", "--", *pathspecs).stdout.encode())
     untracked = _split_paths(
         _git_repo(
             "ls-files",
@@ -197,6 +195,7 @@ def classify_paths(paths: tuple[str, ...]) -> Impact:
     public_python = starts(
         (
             "src/gaia/api/",
+            "src/gaia/_authoring/",
             "src/gaia/cli/",
             "src/gaia/config/",
             "src/gaia/contracts/",
@@ -205,7 +204,7 @@ def classify_paths(paths: tuple[str, ...]) -> Impact:
             "src/gaia/model_gateway/",
             "src/gaia/rag/",
             "src/gaia/runtime/",
-            "src/gaia/sdk/",
+            "src/gaia/spi/",
             "src/gaia/starters/",
             "src/gaia/templates/",
         )
@@ -285,8 +284,10 @@ def validate_change(impact: Impact, manifest: dict[str, Any] | None) -> list[str
         errors.append("Change set intent is missing.")
     if manifest.get("kind") not in KINDS:
         errors.append(f"Change set kind must be one of: {', '.join(KINDS)}.")
-    if impact.tests_required and not impact.tests_changed and not _valid_exemption(
-        manifest, "tests"
+    if (
+        impact.tests_required
+        and not impact.tests_changed
+        and not _valid_exemption(manifest, "tests")
     ):
         errors.append(
             "Production code changed without test changes or a justified tests exemption."
@@ -416,9 +417,7 @@ def verify(*, staged: bool, checks: bool, receipt: bool) -> int:
     print_status(impact, manifest)
     errors = validate_change(impact, manifest)
     if staged and (outside := staged_paths_outside_change_set()):
-        errors.append(
-            "Staged files outside the Gaia change set: " + ", ".join(outside)
-        )
+        errors.append("Staged files outside the Gaia change set: " + ", ".join(outside))
     if not errors and checks:
         errors.extend(run_checks(impact))
     if errors:

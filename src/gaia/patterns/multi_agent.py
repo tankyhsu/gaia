@@ -84,7 +84,7 @@ class MultiAgentError(RuntimeError):
         self.code = code
 
 
-class HandoffOrchestrator:
+class InMemoryHandoffOrchestrator:
     """Run allowlisted agent handoffs without an unbounded autonomous loop."""
 
     def __init__(self, agents: tuple[AgentSpec, ...], *, max_handoffs: int = 4) -> None:
@@ -156,3 +156,8 @@ class HandoffOrchestrator:
             handoff_count += 1
             current_id = handoff.target_agent
             current_input = dict(handoff.input)
+
+
+# Compatibility alias. New applications should use the explicit name so this lightweight
+# process-local helper is not confused with Runtime-persisted Handoff.
+HandoffOrchestrator = InMemoryHandoffOrchestrator

@@ -10,7 +10,7 @@ import httpx
 from pydantic import BaseModel
 
 from gaia.contracts.models import ErrorCode, ModelEndpointProfile, ModelHealth
-from gaia.sdk.model import (
+from gaia.spi.model import (
     ModelCallContext,
     ModelMessage,
     ModelResult,
@@ -54,9 +54,20 @@ class OpenAICompatibleProvider:
         if not profile.base_url:
             raise RuntimeError(ErrorCode.MODEL_UNAVAILABLE)
         headers = {"Authorization": f"Bearer {self._api_key}"} if self._api_key else {}
+        schema_instruction = {
+            "role": "system",
+            "content": (
+                "Return only one JSON object that validates against this JSON Schema. "
+                "Do not add markdown or explanatory text.\n"
+                f"{json.dumps(output_schema.model_json_schema(), separators=(',', ':'))}"
+            ),
+        }
         body = {
             "model": profile.model_id,
-            "messages": [message.model_dump() for message in messages],
+            "messages": [
+                schema_instruction,
+                *[message.model_dump() for message in messages],
+            ],
             "response_format": {"type": "json_object"},
         }
         async with httpx.AsyncClient(base_url=profile.base_url, timeout=timeout_seconds) as client:

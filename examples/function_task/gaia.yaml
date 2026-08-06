@@ -1,0 +1,26 @@
+gaia:
+  application:
+    name: function-task
+    version: 1.0.0
+  profile: mock
+  starters:
+    - core-runtime
+    - model-mock
+    - scenario-runtime
+  runtime:
+    database_url: sqlite+aiosqlite:///./var/gaia_function_task.db
+    environment: mock
+    # Logical scenario code remains local; durable execution requires a matching
+    # Temporal Server and application Worker.
+    execution:
+      provider: temporal
+  stores:
+    operational:
+      provider: sqlite
+  model:
+    provider: mock
+    model_id: deterministic-mock
+  scenarios:
+    modules:
+      - examples.function_task.flows
+      - examples.function_task.tools

@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 
 from gaia.cli.prompts import validation_from_report
-from gaia.sdk.prompt import PromptArtifact
+from gaia.spi.prompt import PromptArtifact
 from gaia.testing.models import GateResult, TestReport
 
 

@@ -23,98 +23,12 @@ class Base(DeclarativeBase):
     pass
 
 
-class RunRecord(Base):
-    __tablename__ = "runs"
-
-    run_id: Mapped[str] = mapped_column(String(64), primary_key=True)
-    scenario_id: Mapped[str] = mapped_column(String(128), nullable=False)
-    mode: Mapped[str] = mapped_column(String(32), nullable=False)
-    status: Mapped[str] = mapped_column(String(32), nullable=False)
-    user_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
-    request_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
-    version_bundle: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
-    result_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
-    error_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
-    pending_gate_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    trace_id: Mapped[str] = mapped_column(String(128), nullable=False)
-    event_sequence: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-
-
-class RunEventRecord(Base):
-    __tablename__ = "run_events"
-    __table_args__ = (UniqueConstraint("run_id", "sequence", name="uq_run_event_sequence"),)
-
-    event_id: Mapped[str] = mapped_column(String(64), primary_key=True)
-    run_id: Mapped[str] = mapped_column(ForeignKey("runs.run_id"), nullable=False)
-    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
-    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    actor: Mapped[str] = mapped_column(String(32), nullable=False)
-    step: Mapped[str] = mapped_column(String(128), nullable=False)
-    status: Mapped[str] = mapped_column(String(32), nullable=False)
-    input_ref: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    output_ref: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    source_refs: Mapped[list[str]] = mapped_column(JSON, nullable=False)
-    rule_refs: Mapped[list[str]] = mapped_column(JSON, nullable=False)
-    error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    details: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
-
-
-class HumanGateRecord(Base):
-    __tablename__ = "human_gates"
-
-    gate_id: Mapped[str] = mapped_column(String(64), primary_key=True)
-    run_id: Mapped[str] = mapped_column(ForeignKey("runs.run_id"), nullable=False)
-    command_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
-    reason: Mapped[str] = mapped_column(Text, nullable=False)
-    risk_level: Mapped[str] = mapped_column(String(16), nullable=False)
-    requested_action: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
-    status: Mapped[str] = mapped_column(String(32), nullable=False)
-    requested_by: Mapped[str] = mapped_column(String(128), nullable=False)
-    decided_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    comment: Mapped[str | None] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-
-
-class SideEffectCommandRecord(Base):
-    __tablename__ = "side_effect_commands"
-
-    command_id: Mapped[str] = mapped_column(String(64), primary_key=True)
-    run_id: Mapped[str] = mapped_column(ForeignKey("runs.run_id"), nullable=False)
-    step_id: Mapped[str] = mapped_column(String(128), nullable=False)
-    tool_name: Mapped[str] = mapped_column(String(128), nullable=False)
-    idempotency_key: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
-    risk_level: Mapped[str] = mapped_column(String(16), nullable=False)
-    payload_ref: Mapped[str] = mapped_column(String(128), nullable=False)
-    payload_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
-    approval_ref: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    result_ref: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    result_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
-    status: Mapped[str] = mapped_column(String(32), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-
-
-class IdempotencyRecord(Base):
-    __tablename__ = "idempotency_records"
-    __table_args__ = (UniqueConstraint("scope", "key", name="uq_idempotency_scope_key"),)
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    scope: Mapped[str] = mapped_column(String(128), nullable=False)
-    key: Mapped[str] = mapped_column(String(128), nullable=False)
-    request_hash: Mapped[str] = mapped_column(String(64), nullable=False)
-    run_id: Mapped[str] = mapped_column(ForeignKey("runs.run_id"), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-
 
 class ArtifactRecord(Base):
     __tablename__ = "artifacts"
 
     artifact_id: Mapped[str] = mapped_column(String(64), primary_key=True)
-    run_id: Mapped[str | None] = mapped_column(ForeignKey("runs.run_id"), nullable=True)
+    run_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     kind: Mapped[str] = mapped_column(String(64), nullable=False)
     content_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
@@ -128,7 +42,7 @@ class ModelInvocationRecord(Base):
     )
 
     invocation_id: Mapped[str] = mapped_column(String(64), primary_key=True)
-    run_id: Mapped[str | None] = mapped_column(ForeignKey("runs.run_id"), nullable=True)
+    run_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     scenario_id: Mapped[str] = mapped_column(String(128), nullable=False)
     provider: Mapped[str] = mapped_column(String(128), nullable=False)
     model_id: Mapped[str] = mapped_column(String(256), nullable=False)
@@ -147,6 +61,27 @@ class ModelInvocationRecord(Base):
     error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
 
+class ToolInvocationRecord(Base):
+    __tablename__ = "tool_invocations"
+    __table_args__ = (
+        Index("ix_tool_invocations_run", "run_id", "started_at"),
+        Index("ix_tool_invocations_status", "status", "started_at"),
+    )
+
+    invocation_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    run_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    scenario_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    tool_name: Mapped[str] = mapped_column(String(128), nullable=False)
+    tool_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    input_ref: Mapped[str] = mapped_column(String(80), nullable=False)
+    output_ref: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    completed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    duration_ms: Mapped[int] = mapped_column(Integer, nullable=False)
+    error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+
 class GuardrailDecisionRecord(Base):
     __tablename__ = "guardrail_decisions"
     __table_args__ = (
@@ -155,7 +90,7 @@ class GuardrailDecisionRecord(Base):
     )
 
     decision_id: Mapped[str] = mapped_column(String(64), primary_key=True)
-    run_id: Mapped[str | None] = mapped_column(ForeignKey("runs.run_id"), nullable=True)
+    run_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     scenario_id: Mapped[str] = mapped_column(String(128), nullable=False)
     stage: Mapped[str] = mapped_column(String(32), nullable=False)
     guardrail_id: Mapped[str] = mapped_column(String(128), nullable=False)
@@ -169,6 +104,67 @@ class GuardrailDecisionRecord(Base):
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     completed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     duration_ms: Mapped[int] = mapped_column(Integer, nullable=False)
+
+
+class AuditRunRecord(Base):
+    """Durable evidence for one Run, independent of the execution provider.
+
+    In production, Temporal owns replayable execution state and deletes Workflow
+    History when the namespace retention window closes. Audit evidence has the
+    opposite requirement -- it must outlive execution by years -- so every Runtime
+    provider projects the terminal Run into Gaia's own database. Temporal does so
+    through the `record_audit` Activity; the development-only in-process Runtime writes
+    the same projection directly.
+
+    `snapshot_json` stores the whole `RunSnapshot` verbatim rather than
+    normalizing it into columns. Evidence is only worth keeping if it is kept
+    the way it was decided; the columns beside it exist solely so the list
+    query can filter and sort without loading every row.
+    """
+
+    __tablename__ = "audit_runs"
+    __table_args__ = (
+        # Keyset pagination reads this index directly: newest first, run_id
+        # breaking ties between Runs created in the same instant.
+        Index("ix_audit_runs_listing", "organization", "created_at", "run_id"),
+        Index("ix_audit_runs_status", "organization", "status"),
+        Index("ix_audit_runs_scenario", "organization", "scenario_id"),
+    )
+
+    run_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    organization: Mapped[str] = mapped_column(String(128), nullable=False)
+    scenario_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    mode: Mapped[str] = mapped_column(String(32), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    snapshot_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    last_sequence: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class AuditRunEventRecord(Base):
+    """One immutable Run event. `(run_id, sequence)` makes the projection replay-safe."""
+
+    __tablename__ = "audit_run_events"
+
+    run_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    sequence: Mapped[int] = mapped_column(Integer, primary_key=True)
+    event_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class AuditHumanGateRecord(Base):
+    """Every gate a Run opened, not just the one it is currently waiting on."""
+
+    __tablename__ = "audit_human_gates"
+    __table_args__ = (Index("ix_audit_human_gates_run", "run_id", "created_at"),)
+
+    gate_id: Mapped[str] = mapped_column(String(200), primary_key=True)
+    run_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    gate_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
 class ReplayJobRecord(Base):

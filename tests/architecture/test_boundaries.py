@@ -1,4 +1,5 @@
 import ast
+import importlib.util
 from pathlib import Path
 
 import yaml
@@ -17,8 +18,9 @@ def python_files(folder: Path) -> list[Path]:
     return sorted(folder.rglob("*.py"))
 
 
-def test_contracts_and_sdk_do_not_depend_on_framework_implementations() -> None:
+def test_contracts_and_spi_do_not_depend_on_framework_implementations() -> None:
     forbidden_prefixes = (
+        "gaia._authoring",
         "gaia.application",
         "gaia.api",
         "gaia.capabilities",
@@ -27,7 +29,7 @@ def test_contracts_and_sdk_do_not_depend_on_framework_implementations() -> None:
         "gaia.runtime",
         "gaia.starters",
     )
-    for folder in (ROOT / "contracts", ROOT / "sdk"):
+    for folder in (ROOT / "contracts", ROOT / "spi"):
         for path in folder.glob("*.py"):
             dependencies = imports(path)
             assert not any(name.startswith(forbidden_prefixes) for name in dependencies), (
@@ -37,9 +39,72 @@ def test_contracts_and_sdk_do_not_depend_on_framework_implementations() -> None:
 
 def test_generic_runtime_contains_no_customer_business_terms() -> None:
     forbidden = {"售后", "工单", "客服", "保险理赔", "供应链"}
-    generic_folders = [ROOT / "contracts", ROOT / "sdk", ROOT / "runtime"]
+    generic_folders = [ROOT / "_authoring", ROOT / "contracts", ROOT / "spi", ROOT / "runtime"]
     text = "\n".join(path.read_text() for folder in generic_folders for path in folder.glob("*.py"))
     assert not forbidden.intersection(text)
+
+
+def test_spi_contains_no_concrete_integrations() -> None:
+    allowed_bases = {"BaseModel", "Exception", "Protocol", "StrEnum"}
+    for path in python_files(ROOT / "spi"):
+        tree = ast.parse(path.read_text())
+        for node in (item for item in ast.walk(tree) if isinstance(item, ast.ClassDef)):
+            bases = {
+                base.id
+                for base in node.bases
+                if isinstance(base, ast.Name)
+            }
+            decorators = {
+                decorator.func.id
+                for decorator in node.decorator_list
+                if isinstance(decorator, ast.Call) and isinstance(decorator.func, ast.Name)
+            }
+            assert bases.intersection(allowed_bases) or "dataclass" in decorators, (
+                f"{path.relative_to(ROOT)}:{node.name} is a concrete implementation in SPI"
+            )
+
+
+def test_private_authoring_modules_do_not_depend_on_framework_implementations() -> None:
+    forbidden_prefixes = (
+        "gaia.application",
+        "gaia.api",
+        "gaia.capabilities",
+        "gaia.integrations",
+        "gaia.persistence",
+        "gaia.runtime",
+        "gaia.starters",
+    )
+    for path in python_files(ROOT / "_authoring"):
+        dependencies = imports(path)
+        assert not any(name.startswith(forbidden_prefixes) for name in dependencies), (
+            f"{path.relative_to(ROOT)} depends on a framework implementation"
+        )
+
+
+def test_legacy_sdk_package_is_removed() -> None:
+    assert not (ROOT / "sdk").exists()
+    assert importlib.util.find_spec("gaia.sdk") is None
+
+
+def test_public_application_api_and_spi_have_distinct_surfaces() -> None:
+    import gaia
+    import gaia.spi
+
+    assert {
+        "ScenarioContext",
+        "ScenarioResponse",
+        "agent_handler",
+        "continuation_handler",
+        "fingerprint",
+        "read_tool",
+        "scenario",
+        "write_tool",
+    }.issubset(gaia.__all__)
+    assert {"AuthnProvider", "ModelProvider", "Retriever", "WriteAdapter"}.issubset(
+        gaia.spi.__all__
+    )
+    assert "ApiKeyAuthnProvider" not in gaia.spi.__all__
+    assert "InProcessEventPublisher" not in gaia.spi.__all__
 
 
 def test_framework_never_imports_reference_applications() -> None:
@@ -97,9 +162,7 @@ def test_capabilities_do_not_depend_on_application_or_starters() -> None:
 
 
 def test_dev_compose_contains_only_optional_infrastructure() -> None:
-    compose = yaml.safe_load(
-        (PROJECT_ROOT / "infra" / "dev" / "compose.yaml").read_text()
-    )
+    compose = yaml.safe_load((PROJECT_ROOT / "infra" / "dev" / "compose.yaml").read_text())
 
     assert set(compose["services"]) == {"postgres", "redis"}
     assert {"gaia", "web", "docs"}.isdisjoint(compose["services"])

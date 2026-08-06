@@ -319,6 +319,105 @@
             }
           }
         }
+      },
+      "get": {
+        "summary": "List Runs",
+        "description": "List Runs newest-first, scoped to the caller's organization.\n\nAn authenticated identity only ever sees Runs belonging to its own\n`organization` -- filtered by Gaia's audit projection through the\nRuntime SPI, not after loading Runs in Python. A list endpoint is the\neasiest place to leak an entire dataset in one request.\n\nA trusted-service caller (API-key mode, `identity is None`) has no\norganization to scope by and sees Runs across every organization --\nthe same trust boundary `authorized_run` documents for single-Run\nreads: no ownership check is possible or performed, because the\ncaller is trusted per `ApiKeyAuthnProvider`.\n\n`limit` above `RUN_LIST_MAX_LIMIT` is rejected with 422, matching\nhow `actuator.py`'s `window_hours` / `stale_after_seconds` bounds\nare enforced elsewhere in this API -- out-of-range values are a\nclient error, not silently clamped.",
+        "operationId": "list_runs_v1_runs_get",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/RunStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "name": "scenario_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Scenario Id"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunPage"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/v1/runs/{run_id}": {
@@ -468,6 +567,55 @@
         }
       }
     },
+    "/v1/runs/{run_id}/tool-invocations": {
+      "get": {
+        "summary": "List Tool Invocations",
+        "operationId": "list_tool_invocations_v1_runs__run_id__tool_invocations_get",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunToolObservability"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/runs/{run_id}/cancel": {
       "post": {
         "summary": "Cancel Run",
@@ -500,6 +648,60 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/RunSnapshot"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/runs/{run_id}/human-gates": {
+      "get": {
+        "summary": "List Run Human Gates",
+        "description": "Every HumanGate `run_id` opened, so a caller can name its approver.\n\n`GET /v1/human-gates/{gate_id}` only helps a caller who already holds\na gate id. A Run's own snapshot never carries `decided_by`, and its\nin-flight gate references (`pending_gate_id`, `action_plan[].gate_id`)\nare cleared the moment it completes -- so once a Run is done, nothing\nelse can answer \"who approved this\" at all. Same organization\nisolation as every other `/v1/runs/{run_id}/...` route: `authorized_run`\nturns a Run in another organization into 404, not 403.",
+        "operationId": "list_run_human_gates_v1_runs__run_id__human_gates_get",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/HumanGate"
+                  },
+                  "title": "Response List Run Human Gates V1 Runs  Run Id  Human Gates Get"
                 }
               }
             }
@@ -931,6 +1133,47 @@
   },
   "components": {
     "schemas": {
+      "ActionPlanSnapshot": {
+        "properties": {
+          "version": {
+            "type": "string",
+            "const": "1",
+            "title": "Version",
+            "default": "1"
+          },
+          "current_action": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Current Action",
+            "default": 0
+          },
+          "actions": {
+            "items": {
+              "$ref": "#/components/schemas/PlannedActionSnapshot"
+            },
+            "type": "array",
+            "title": "Actions"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "actions"
+        ],
+        "title": "ActionPlanSnapshot"
+      },
+      "ActionStatus": {
+        "type": "string",
+        "enum": [
+          "pending",
+          "waiting_human",
+          "executing",
+          "succeeded",
+          "failed",
+          "skipped"
+        ],
+        "title": "ActionStatus"
+      },
       "ActorType": {
         "type": "string",
         "enum": [
@@ -1077,6 +1320,47 @@
         ],
         "title": "ActuatorInfo"
       },
+      "ApprovalView": {
+        "properties": {
+          "title": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Title"
+          },
+          "summary": {
+            "type": "string",
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Summary"
+          },
+          "fields": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Fields"
+          },
+          "risk_explanation": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Risk Explanation"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "title",
+          "summary"
+        ],
+        "title": "ApprovalView",
+        "description": "Redacted business presentation for one human confirmation."
+      },
       "CancelRequest": {
         "properties": {
           "reason": {
@@ -1145,6 +1429,25 @@
           "failed"
         ],
         "title": "ComponentStatus"
+      },
+      "ContinuationSnapshot": {
+        "properties": {
+          "handler": {
+            "type": "string",
+            "title": "Handler"
+          },
+          "ready": {
+            "type": "boolean",
+            "title": "Ready"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "handler",
+          "ready"
+        ],
+        "title": "ContinuationSnapshot"
       },
       "DatabaseContention": {
         "properties": {
@@ -1302,13 +1605,24 @@
           "CONTEXT_INSUFFICIENT",
           "MODEL_CAPABILITY_MISSING",
           "MODEL_UNAVAILABLE",
+          "MODEL_OUTPUT_INVALID",
           "TOOL_TIMEOUT",
+          "GUARDRAIL_BLOCKED",
           "SIDE_EFFECT_UNKNOWN",
           "HUMAN_GATE_REJECTED",
           "HUMAN_GATE_EXPIRED",
+          "GATE_DECISION_UNVERIFIED",
+          "GATE_NOT_PENDING",
           "BUDGET_EXCEEDED",
+          "HANDOFF_NOT_ALLOWED",
+          "HANDOFF_TARGET_NOT_FOUND",
+          "CONTINUATION_HANDLER_NOT_FOUND",
           "RUN_NOT_RESUMABLE",
-          "INTERNAL_ERROR"
+          "INTERNAL_ERROR",
+          "RUNTIME_ILLEGAL_TRANSITION",
+          "POLICY_OVERRIDE_INVALID",
+          "IDENTITY_MISMATCH",
+          "DURABLE_EXECUTION_REQUIRED"
         ],
         "title": "ErrorCode"
       },
@@ -1588,6 +1902,31 @@
         "type": "object",
         "title": "HTTPValidationError"
       },
+      "HandoffSnapshot": {
+        "properties": {
+          "current_agent": {
+            "type": "string",
+            "title": "Current Agent"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          },
+          "handoff_count": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Handoff Count"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "current_agent",
+          "reason",
+          "handoff_count"
+        ],
+        "title": "HandoffSnapshot"
+      },
       "HealthResponse": {
         "properties": {
           "status": {
@@ -1640,6 +1979,16 @@
             "additionalProperties": true,
             "type": "object",
             "title": "Requested Action"
+          },
+          "approval_view": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ApprovalView"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "status": {
             "$ref": "#/components/schemas/GateStatus"
@@ -2099,6 +2448,98 @@
         "type": "object",
         "title": "OutboxSummary"
       },
+      "PlannedActionSnapshot": {
+        "properties": {
+          "step_id": {
+            "type": "string",
+            "title": "Step Id"
+          },
+          "tool_name": {
+            "type": "string",
+            "title": "Tool Name"
+          },
+          "risk_level": {
+            "$ref": "#/components/schemas/RiskLevel"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ActionStatus"
+          },
+          "depends_on": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Depends On"
+          },
+          "command_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Command Id"
+          },
+          "gate_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gate Id"
+          },
+          "approval_view": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ApprovalView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "result": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Result"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorCode"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "step_id",
+          "tool_name",
+          "risk_level",
+          "status"
+        ],
+        "title": "PlannedActionSnapshot"
+      },
       "ReplayCaseResult": {
         "properties": {
           "case_id": {
@@ -2420,6 +2861,35 @@
         ],
         "title": "RunModelObservability"
       },
+      "RunPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/RunSnapshot"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "RunPage",
+        "description": "A page of `RunSnapshot`s, newest first.\n\n`next_cursor` is an opaque token: `None` means this is the last page.\nPass it back as the `cursor` query parameter to fetch the next page.\nDo not parse or construct it -- its encoding is an implementation detail\nof the Runtime and may change without notice."
+      },
       "RunRequest": {
         "properties": {
           "scenario_id": {
@@ -2455,6 +2925,17 @@
             "type": "string",
             "title": "Run Id"
           },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trace Id"
+          },
           "scenario_id": {
             "type": "string",
             "title": "Scenario Id"
@@ -2470,6 +2951,48 @@
           },
           "version_bundle": {
             "$ref": "#/components/schemas/VersionBundle"
+          },
+          "pending_result": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pending Result"
+          },
+          "action_plan": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ActionPlanSnapshot"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "handoff": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HandoffSnapshot"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "continuation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ContinuationSnapshot"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "result": {
             "anyOf": [
@@ -2544,6 +3067,31 @@
         ],
         "title": "RunStatus"
       },
+      "RunToolObservability": {
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "title": "Run Id"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/ToolInvocationSummary"
+          },
+          "invocations": {
+            "items": {
+              "$ref": "#/components/schemas/ToolInvocation"
+            },
+            "type": "array",
+            "title": "Invocations"
+          }
+        },
+        "type": "object",
+        "required": [
+          "run_id",
+          "summary",
+          "invocations"
+        ],
+        "title": "RunToolObservability"
+      },
       "RuntimeIssue": {
         "properties": {
           "run_id": {
@@ -2576,6 +3124,17 @@
               }
             ],
             "title": "Error Code"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trace Id"
           },
           "updated_at": {
             "type": "string",
@@ -2632,6 +3191,10 @@
             "type": "number",
             "title": "Blocked Rate"
           },
+          "stopped_by_control": {
+            "type": "integer",
+            "title": "Stopped By Control"
+          },
           "active_runs": {
             "type": "integer",
             "title": "Active Runs"
@@ -2674,6 +3237,10 @@
           "outbox": {
             "$ref": "#/components/schemas/OutboxSummary"
           },
+          "needs_attention": {
+            "type": "integer",
+            "title": "Needs Attention"
+          },
           "issues": {
             "items": {
               "$ref": "#/components/schemas/RuntimeIssue"
@@ -2692,6 +3259,7 @@
           "success_rate",
           "failure_rate",
           "blocked_rate",
+          "stopped_by_control",
           "active_runs",
           "stale_runs",
           "pending_human_gates",
@@ -2701,9 +3269,140 @@
           "error_counts",
           "database",
           "outbox",
+          "needs_attention",
           "issues"
         ],
         "title": "RuntimeSummary"
+      },
+      "ToolInvocation": {
+        "properties": {
+          "invocation_id": {
+            "type": "string",
+            "title": "Invocation Id"
+          },
+          "run_id": {
+            "type": "string",
+            "title": "Run Id"
+          },
+          "scenario_id": {
+            "type": "string",
+            "title": "Scenario Id"
+          },
+          "tool_name": {
+            "type": "string",
+            "title": "Tool Name"
+          },
+          "tool_version": {
+            "type": "string",
+            "title": "Tool Version"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ToolInvocationStatus"
+          },
+          "input_ref": {
+            "type": "string",
+            "title": "Input Ref"
+          },
+          "output_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Output Ref"
+          },
+          "started_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Started At"
+          },
+          "completed_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Completed At"
+          },
+          "duration_ms": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Duration Ms"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          }
+        },
+        "type": "object",
+        "required": [
+          "invocation_id",
+          "run_id",
+          "scenario_id",
+          "tool_name",
+          "tool_version",
+          "status",
+          "input_ref",
+          "started_at",
+          "completed_at",
+          "duration_ms"
+        ],
+        "title": "ToolInvocation",
+        "description": "Payload-free evidence for one run-scoped tool call."
+      },
+      "ToolInvocationStatus": {
+        "type": "string",
+        "enum": [
+          "succeeded",
+          "failed",
+          "blocked",
+          "timed_out"
+        ],
+        "title": "ToolInvocationStatus"
+      },
+      "ToolInvocationSummary": {
+        "properties": {
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "succeeded": {
+            "type": "integer",
+            "title": "Succeeded"
+          },
+          "failed": {
+            "type": "integer",
+            "title": "Failed"
+          },
+          "blocked": {
+            "type": "integer",
+            "title": "Blocked"
+          },
+          "timed_out": {
+            "type": "integer",
+            "title": "Timed Out"
+          },
+          "duration": {
+            "$ref": "#/components/schemas/DurationSummary"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total",
+          "succeeded",
+          "failed",
+          "blocked",
+          "timed_out",
+          "duration"
+        ],
+        "title": "ToolInvocationSummary"
       },
       "UserIdentity": {
         "properties": {

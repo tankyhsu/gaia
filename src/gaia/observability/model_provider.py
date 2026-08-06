@@ -16,7 +16,7 @@ from pydantic import BaseModel
 
 from gaia.contracts.models import ModelEndpointProfile, ModelHealth
 from gaia.observability.models import ModelInvocation, ModelInvocationStatus
-from gaia.sdk.model import (
+from gaia.spi.model import (
     ModelCallContext,
     ModelMessage,
     ModelProvider,
