@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from gaia.sdk.guardrail import (
+from gaia.spi.guardrail import (
     GuardrailAction,
     GuardrailContext,
     GuardrailResult,

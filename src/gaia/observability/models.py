@@ -7,7 +7,7 @@ from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from gaia.sdk.model import ModelUsage as ModelUsage
+from gaia.spi.model import ModelUsage as ModelUsage
 
 
 class ModelInvocationStatus(StrEnum):
@@ -77,6 +77,61 @@ class RunModelObservability(BaseModel):
     invocations: tuple[ModelInvocation, ...]
 
 
+class ToolInvocationStatus(StrEnum):
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+    BLOCKED = "blocked"
+    TIMED_OUT = "timed_out"
+
+
+class ToolInvocation(BaseModel):
+    """Payload-free evidence for one run-scoped tool call."""
+
+    model_config = ConfigDict(frozen=True)
+
+    invocation_id: str
+    run_id: str
+    scenario_id: str
+    tool_name: str
+    tool_version: str
+    status: ToolInvocationStatus
+    input_ref: str
+    output_ref: str | None = None
+    started_at: datetime
+    completed_at: datetime
+    duration_ms: int = Field(ge=0)
+    error_code: str | None = None
+
+    @model_validator(mode="after")
+    def status_has_consistent_evidence(self) -> ToolInvocation:
+        if self.completed_at < self.started_at:
+            raise ValueError("completed_at must not precede started_at")
+        if self.status == ToolInvocationStatus.SUCCEEDED and self.output_ref is None:
+            raise ValueError("a successful tool invocation requires output_ref")
+        if self.status != ToolInvocationStatus.SUCCEEDED and self.error_code is None:
+            raise ValueError("an unsuccessful tool invocation requires error_code")
+        return self
+
+
+class ToolInvocationSummary(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    total: int
+    succeeded: int
+    failed: int
+    blocked: int
+    timed_out: int
+    duration: DurationSummary
+
+
+class RunToolObservability(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    run_id: str
+    summary: ToolInvocationSummary
+    invocations: tuple[ToolInvocation, ...]
+
+
 class DatabaseContention(BaseModel):
     model_config = ConfigDict(frozen=True)
     backend: str
@@ -104,6 +159,7 @@ class RuntimeIssue(BaseModel):
     bottleneck: str
     age_seconds: int
     error_code: str | None = None
+    trace_id: str | None = None
     updated_at: datetime
 
 
@@ -117,6 +173,11 @@ class RuntimeSummary(BaseModel):
     success_rate: float
     failure_rate: float
     blocked_rate: float
+    # Runs a control deliberately refused: an approver rejecting a write, a
+    # policy denying a tool. Reported as its own number because it is neither a
+    # success nor a failure, and presenting it as either misrepresents what
+    # happened -- see `stopped_by_control` in observability/runtime.py.
+    stopped_by_control: int
     active_runs: int
     stale_runs: int
     pending_human_gates: int
@@ -126,4 +187,11 @@ class RuntimeSummary(BaseModel):
     error_counts: dict[str, int]
     database: DatabaseContention
     outbox: OutboxSummary
+    # Commands parked in the terminal `needs_attention` status (task card D1.1
+    # in docs/施工图/13-重构施工图-装配打通与Runtime拆解.md): automatic recovery
+    # exhausted its budget without resolving the write's true outcome, and
+    # there is deliberately no API to move a command out of this status --
+    # only a human, working from the downstream system of record, can. This
+    # count is how an operator finds out one exists at all.
+    needs_attention: int
     issues: tuple[RuntimeIssue, ...]

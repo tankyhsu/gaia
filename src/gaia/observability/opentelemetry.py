@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib
+import json
 from typing import Any
 
 from gaia.observability.models import ModelInvocation
@@ -46,7 +47,7 @@ class OpenTelemetryModelInvocationSink:
         )
 
     async def record(self, invocation: ModelInvocation) -> None:
-        attributes: dict[str, str | int] = {
+        attributes: dict[str, str | int | float] = {
             "gaia.run.id": invocation.run_id,
             "gaia.scenario.id": invocation.scenario_id,
             "gen_ai.provider.name": invocation.provider,
@@ -54,9 +55,51 @@ class OpenTelemetryModelInvocationSink:
             "gaia.prompt.version": invocation.prompt_version,
             "gaia.model.status": invocation.status.value,
             "gaia.model.retry_count": invocation.retry_count,
+            "langfuse.observation.type": "generation",
+            "langfuse.observation.model.name": invocation.model_id,
+            "langfuse.observation.metadata.gaia_run_id": invocation.run_id,
+            "langfuse.observation.metadata.gaia_scenario_id": invocation.scenario_id,
+            "langfuse.observation.metadata.prompt_version": invocation.prompt_version,
+            "langfuse.session.id": invocation.run_id,
+            "langfuse.trace.name": invocation.scenario_id,
+            "langfuse.version": invocation.prompt_version,
         }
         if invocation.error_code is not None:
             attributes["error.type"] = invocation.error_code
+            attributes["langfuse.observation.level"] = "ERROR"
+            attributes["langfuse.observation.status_message"] = invocation.error_code
+        if invocation.usage is not None:
+            usage = invocation.usage
+            attributes.update(
+                {
+                    "gen_ai.usage.input_tokens": usage.input_tokens,
+                    "gen_ai.usage.output_tokens": usage.output_tokens,
+                    "gen_ai.usage.total_tokens": usage.total_tokens,
+                    "langfuse.observation.usage_details": json.dumps(
+                        {
+                            "input": usage.input_tokens,
+                            "output": usage.output_tokens,
+                            "total": usage.total_tokens,
+                        },
+                        separators=(",", ":"),
+                        sort_keys=True,
+                    ),
+                }
+            )
+            if (
+                usage.estimated_cost is not None
+                and usage.currency is not None
+                and usage.currency.upper() == "USD"
+            ):
+                attributes["gen_ai.usage.cost"] = usage.estimated_cost
+                attributes["langfuse.observation.cost_details"] = json.dumps(
+                    {"total": usage.estimated_cost},
+                    separators=(",", ":"),
+                    sort_keys=True,
+                )
+            elif usage.estimated_cost is not None and usage.currency is not None:
+                attributes["gaia.model.estimated_cost"] = usage.estimated_cost
+                attributes["gaia.model.cost_currency"] = usage.currency
         span = self._tracer.start_span(
             "gaia.model.generate",
             attributes=attributes,

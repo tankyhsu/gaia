@@ -6,7 +6,7 @@ import hashlib
 import json
 
 from gaia.rag.repository import DocumentManifest, MemoryRagRepository
-from gaia.sdk.rag import (
+from gaia.spi.rag import (
     Chunker,
     DocumentLoader,
     DocumentParser,

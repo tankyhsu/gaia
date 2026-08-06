@@ -13,6 +13,7 @@ from httpx import Response
 from gaia.cli.main import main
 from gaia.components import ComponentDescriptor, ComponentKind, ComponentRegistry
 from gaia.config import GaiaApplicationConfig
+from gaia.diagnostics.error_catalog import error_descriptor
 from gaia.starters import OnProfile, StarterDescriptor
 from gaia.testing import (
     ExpectedSubsetEvaluator,
@@ -20,6 +21,7 @@ from gaia.testing import (
     RequiredMeasurementsGate,
     TestCase,
     TestObservation,
+    load_dataset,
 )
 
 
@@ -79,8 +81,13 @@ def test_init_creates_complete_independent_project(tmp_path: Path) -> None:
     assert "def create_application():" in generated_app
     assert "resolve_config_path()" in generated_app
     assert "GAIA_CONFIG" not in generated_app
-    assert "from demo_app.app import create_application" in generated_test
-    assert "TestClient(create_application())" in generated_test
+    # The scaffolded test must pass on a bare `pytest`, immediately after
+    # `gaia init`. Driving the HTTP API would now require a running Temporal
+    # server and Worker, so a brand-new project's first command would fail on
+    # infrastructure rather than on anything the author wrote.
+    assert "from demo_app.scenarios.hello import hello" in generated_test
+    assert "ScenarioTestHarness(hello)" in generated_test
+    assert "TestClient" not in generated_test
     assert "gaia dev" in (target / "README.md").read_text()
     assert "--app demo_app.app:app" in (target / "README.md").read_text()
     assert "--reload" in (target / "README.md").read_text()
@@ -91,12 +98,19 @@ def test_init_creates_complete_independent_project(tmp_path: Path) -> None:
     assert "sandbox:" in config
     assert "environment: customer" in config
     assert "write_mode: disabled" in config
+    assert "provider: in_process" in config
+    assert "provider: temporal" in config
+    assert "topology:" not in config
     assert "prompt-file" in config
     assert (
         'PromptRef(prompt_id="hello", version="1.0.0")'
         in (target / "src/demo_app/scenarios/hello.py").read_text()
     )
     assert (target / ".gaia/init.json").is_file()
+    dataset = (target / "tests/scenario-cases.yaml").read_text()
+    assert "case_id: normal" in dataset
+    assert "case_id: policy-boundary" in dataset
+    assert "case_id: dependency-failure" in dataset
 
 
 def test_init_knowledge_template_activates_rag_dependencies(tmp_path: Path) -> None:
@@ -110,6 +124,10 @@ def test_init_knowledge_template_activates_rag_dependencies(tmp_path: Path) -> N
     assert "embedding-openai-compatible" in config
     assert "knowledge.search" in scenario
     assert "RetrievalRequest" in scenario
+    assert "provider: in_process" in config
+    dataset = load_dataset(target / "tests/scenario-cases.yaml")
+    dependency_case = next(case for case in dataset.cases if case.case_id == "dependency-failure")
+    assert dependency_case.input["dependency"] == "retriever"
     assert not (target / "src/knowledge_app/scenarios/hello.py").exists()
 
 
@@ -120,10 +138,25 @@ def test_init_approval_template_generates_human_gate_flow(tmp_path: Path) -> Non
 
     scenario = (target / "src/approval_app/scenarios/approval.py").read_text()
     application = (target / "src/approval_app/app.py").read_text()
+    config = (target / "gaia.yaml").read_text()
     compile(scenario, "approval.py", "exec")
     compile(application, "app.py", "exec")
-    assert "write_tools=(update_record,)" in application
+    # A7: the write scenario and its write tool are discovered declaratively from
+    # `scenarios.modules`, not hand-wired with `GaiaAppBuilder(...).scenarios(...).tools(...)`.
+    assert "GaiaAppBuilder" not in application
+    assert "dependencies=" not in application
+    assert "resolve_config_path()" in application
+    assert "scenario-runtime" in config
+    assert "approval_app.scenarios.approval" in config
+    assert "provider: temporal" in config
+    assert "provider: in_process" not in config
+    assert "topology:" not in config
     assert 'human_gate_rules=("all-writes",)' in scenario
+    assert "approval_view=ApprovalView(" in scenario
+    assert "pending_result=" in scenario
+    dataset = load_dataset(target / "tests/scenario-cases.yaml")
+    dependency_case = next(case for case in dataset.cases if case.case_id == "dependency-failure")
+    assert dependency_case.input["dependency"] == "write-adapter"
 
 
 def test_init_component_name_activates_its_starter(tmp_path: Path) -> None:
@@ -144,7 +177,9 @@ def test_init_component_name_activates_its_starter(tmp_path: Path) -> None:
     assert "prompt-postgres" in (target / "gaia.yaml").read_text()
 
 
-def test_init_replaces_default_capability_starter(tmp_path: Path) -> None:
+def test_init_replaces_default_capability_starter(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     target = tmp_path / "openai-app"
 
     assert main(["init", str(target), "--starter", "model-openai-compatible"]) == 0
@@ -154,6 +189,10 @@ def test_init_replaces_default_capability_starter(tmp_path: Path) -> None:
     assert "model-mock" not in config
     assert "base_url: http://127.0.0.1:8001/v1" in config
     assert "GAIA_MODEL_API_KEY" in (target / ".env.example").read_text()
+    # `gaia check` now resolves `scenarios.modules`, so the generated package must be
+    # importable, exactly as it would be after `uv add --editable` + `uv sync` in a real
+    # generated project (see developer-docs/getting-started.md).
+    monkeypatch.syspath_prepend(str(target / "src"))
     assert main(["check", "--config", str(target / "gaia.yaml")]) == 0
 
 
@@ -170,7 +209,9 @@ def test_init_postgres_starter_adds_optional_dependency(tmp_path: Path) -> None:
     assert "GAIA_POSTGRES_URL=" in (target / ".env.example").read_text()
 
 
-def test_init_postgres_prompt_registry_replaces_file_provider(tmp_path: Path) -> None:
+def test_init_postgres_prompt_registry_replaces_file_provider(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     target = tmp_path / "prompt-app"
 
     assert main(["init", str(target), "--starter", "prompt-postgres"]) == 0
@@ -181,11 +222,13 @@ def test_init_postgres_prompt_registry_replaces_file_provider(tmp_path: Path) ->
     assert "persistence-postgres" in config
     assert "provider: postgres" in config
     assert "gaia-framework[postgres]" in (target / "pyproject.toml").read_text()
+    monkeypatch.syspath_prepend(str(target / "src"))
     assert main(["check", "--config", str(target / "gaia.yaml")]) == 0
 
 
 def test_init_rag_starter_adds_explicit_vector_embedding_and_rag_config(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     target = tmp_path / "rag-app"
 
@@ -199,6 +242,7 @@ def test_init_rag_starter_adds_explicit_vector_embedding_and_rag_config(
     assert "namespace_prefix: gaia-rag" in config
     assert "GAIA_EMBEDDING_API_KEY" in config
     assert "gaia-framework[postgres]" in (target / "pyproject.toml").read_text()
+    monkeypatch.syspath_prepend(str(target / "src"))
     assert main(["check", "--config", str(target / "gaia.yaml")]) == 0
 
 
@@ -228,7 +272,9 @@ def test_init_redis_starters_add_optional_dependency_and_secret_reference(tmp_pa
     assert "GAIA_REDIS_URL=" in (target / ".env.example").read_text()
 
 
-def test_init_outbox_adds_postgres_and_in_process_publisher_dependencies(tmp_path: Path) -> None:
+def test_init_outbox_adds_postgres_and_in_process_publisher_dependencies(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     target = tmp_path / "outbox-app"
 
     assert main(["init", str(target), "--starter", "outbox-postgres"]) == 0
@@ -238,6 +284,7 @@ def test_init_outbox_adds_postgres_and_in_process_publisher_dependencies(tmp_pat
     assert "persistence-postgres" in config
     assert "publisher-in-process" in config
     assert "outbox-postgres" in config
+    monkeypatch.syspath_prepend(str(target / "src"))
     assert main(["check", "--config", str(target / "gaia.yaml")]) == 0
 
 
@@ -320,6 +367,73 @@ def test_check_reports_components_and_conditions(tmp_path: Path) -> None:
     assert report["ok"] is True
     assert report["components"]
     assert report["conditions"]
+
+
+def test_check_reports_catalog_operator_action_for_unimportable_scenario_module(
+    tmp_path: Path,
+) -> None:
+    """A brand-new user's first `gaia check` after `gaia init` fails because the generated
+    package is not yet installed. The error code (`SCENARIO_MODULE_NOT_FOUND`) is precise
+    either way, but the operator action must point at installing the project, not at
+    editing gaia.yaml -- the same class of misdiagnosis task A2 fixed for transitive
+    imports. This pins that `_check` prefers the error catalog's specific guidance over
+    the generic gaia.yaml/profile/Starter action whenever the failure is a
+    `ScenarioDiscoveryError`.
+    """
+
+    config = tmp_path / "gaia.yaml"
+    config.write_text(
+        "gaia:\n"
+        "  starters: [core-runtime, model-mock, scenario-runtime]\n"
+        "  scenarios:\n"
+        "    modules: [nonexistent_app.scenarios.hello]\n"
+    )
+    output: list[str] = []
+
+    assert main(["check", "--config", str(config)], output=output.append) == 2
+
+    report = json.loads(output[0])
+    assert report["ok"] is False
+    assert report["issues"] == ["SCENARIO_MODULE_NOT_FOUND:nonexistent_app.scenarios.hello"]
+    expected_action = error_descriptor("SCENARIO_MODULE_NOT_FOUND").operator_action
+    assert report["operator_action"] == expected_action
+    assert "install" in report["operator_action"].lower()
+    generic_action = "Correct the reported gaia.yaml, profile, secret reference, or Starter issue."
+    assert report["operator_action"] != generic_action
+
+
+def test_check_reports_import_purity_findings_and_exits_two(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A2.1's AST purity scan must run before `configure()` and surface as a `gaia check`
+    failure: a scenario module that resolves a secret at import time is a real, importable
+    module (unlike the `SCENARIO_MODULE_NOT_FOUND` case above), so without the purity scan
+    this would sail through `configure()` and actually resolve the secret."""
+
+    module_name = "cli_test_impure_scenario_module"
+    (tmp_path / f"{module_name}.py").write_text(
+        "from gaia.config.secrets import resolve_secret\n"
+        "\n"
+        'SECRET = resolve_secret("db-password")\n'
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+
+    config = tmp_path / "gaia.yaml"
+    config.write_text(
+        "gaia:\n"
+        "  starters: [core-runtime, model-mock, scenario-runtime]\n"
+        "  scenarios:\n"
+        f"    modules: [{module_name}]\n"
+    )
+    output: list[str] = []
+
+    assert main(["check", "--config", str(config)], output=output.append) == 2
+
+    report = json.loads(output[0])
+    assert report["ok"] is False
+    assert len(report["issues"]) == 1
+    assert module_name in report["issues"][0]
+    assert "gaia.config.secrets.resolve_secret" in report["issues"][0]
 
 
 def test_check_returns_two_for_invalid_configuration(tmp_path: Path) -> None:
@@ -563,6 +677,87 @@ def test_dev_rejects_reload_without_an_application_import_string(tmp_path: Path)
     config.write_text("gaia:\n  profile: mock\n")
 
     assert main(["dev", "--config", str(config), "--reload"]) == 2
+
+
+def test_worker_loads_application_composition_and_restores_environment(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = tmp_path / "gaia.yaml"
+    config.write_text(
+        "gaia:\n"
+        "  profile: mock\n"
+        "  runtime:\n"
+        "    execution:\n"
+        "      provider: temporal\n"
+        "      namespace: demo\n"
+        "      task_queue: demo-worker\n"
+    )
+    monkeypatch.setenv("GAIA_CONFIG_PATH", "original.yaml")
+    monkeypatch.setenv("GAIA__PROFILE", "original")
+    calls: list[tuple[str, str | None, str | None]] = []
+    output: list[str] = []
+
+    def worker_runner(application: object, app_target: str) -> None:
+        assert application is not None
+        calls.append(
+            (
+                app_target,
+                os.environ.get("GAIA_CONFIG_PATH"),
+                os.environ.get("GAIA__PROFILE"),
+            )
+        )
+
+    assert (
+        main(
+            [
+                "worker",
+                "--config",
+                str(config),
+                "--app",
+                "examples.controlled_task.app:create_app",
+            ],
+            worker_runner=worker_runner,
+            output=output.append,
+        )
+        == 0
+    )
+    assert calls == [
+        (
+            "examples.controlled_task.app:create_app",
+            str(config.resolve()),
+            "original",
+        )
+    ]
+    assert os.environ["GAIA_CONFIG_PATH"] == "original.yaml"
+    assert os.environ["GAIA__PROFILE"] == "original"
+    assert output == ["starting Temporal Worker namespace=demo task_queue=demo-worker"]
+
+
+def test_worker_reports_runner_failure(tmp_path: Path) -> None:
+    config = tmp_path / "gaia.yaml"
+    config.write_text("gaia:\n  profile: mock\n")
+    output: list[str] = []
+
+    def worker_runner(application: object, app_target: str) -> None:
+        del application, app_target
+        raise RuntimeError("Temporal is unavailable")
+
+    assert (
+        main(
+            [
+                "worker",
+                "--config",
+                str(config),
+                "--app",
+                "examples.controlled_task.app:create_app",
+            ],
+            worker_runner=worker_runner,
+            output=output.append,
+        )
+        == 2
+    )
+    assert output[-1] == "gaia worker failed: Temporal is unavailable"
 
 
 def test_test_command_runs_dataset_and_writes_report(tmp_path: Path) -> None:

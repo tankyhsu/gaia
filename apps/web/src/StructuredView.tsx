@@ -8,6 +8,7 @@ const labels: Record<string, string> = {
   version: "版本",
   profile: "运行配置",
   starters: "已启用 Starter",
+  scenarios: "业务场景",
   runtime: "运行时",
   environment: "运行环境",
   database_url: "数据库连接",
@@ -64,6 +65,8 @@ const labels: Record<string, string> = {
   workflow: "流程引擎",
   context: "上下文",
   policy: "安全策略",
+  authn: "身份认证",
+  observability: "可观测性",
   human_gate_ttl_seconds: "人工确认有效期（秒）",
   evaluation: "测试",
   cases: "测试集路径",
@@ -127,31 +130,138 @@ interface ConfigTabDefinition {
 
 const configTabDefinitions: readonly ConfigTabDefinition[] = [
   {
-    id: "foundation",
-    label: "基础与运行",
-    keys: ["application", "profile", "starters", "runtime"],
+    id: "application",
+    label: "应用与场景",
+    keys: ["application", "profile", "starters", "scenarios"],
   },
   {
-    id: "ai",
-    label: "模型与流程",
-    keys: ["model", "embedding", "prompt", "rag", "workflow", "context", "policy"],
+    id: "execution",
+    label: "执行与治理",
+    keys: ["runtime", "workflow", "policy", "authn"],
   },
   {
-    id: "data",
-    label: "数据存储",
-    keys: ["stores"],
+    id: "intelligence",
+    label: "模型与知识",
+    keys: ["model", "embedding", "prompt", "rag", "context"],
   },
   {
-    id: "services",
-    label: "缓存与事件",
-    keys: ["redis", "cache", "rate_limit", "outbox"],
+    id: "infrastructure",
+    label: "数据与基础设施",
+    keys: ["stores", "redis", "cache", "rate_limit", "outbox"],
   },
   {
-    id: "testing",
-    label: "测试",
-    keys: ["evaluation"],
+    id: "operations",
+    label: "观测与评估",
+    keys: ["observability", "evaluation"],
   },
 ];
+
+function nestedRecord(value: DataRecord, key: string): DataRecord {
+  const nested = value[key];
+  return isRecord(nested) ? nested : {};
+}
+
+function configuredValue(value: unknown): string {
+  return typeof value === "string" && value ? value : "未配置";
+}
+
+function providerName(value: unknown): string {
+  if (typeof value !== "string" || value === "disabled" || !value) return "未启用";
+  return (
+    {
+      temporal: "Temporal",
+      in_process: "进程内开发执行",
+      langgraph: "LangGraph",
+      postgres: "PostgreSQL",
+      mock: "模拟实现",
+      "openai-compatible": "OpenAI 兼容接口",
+      "external-http": "企业已有 RAG 服务",
+    }[value] ?? value
+  );
+}
+
+function ConfigIntegrationOverview({ value }: { value: DataRecord }) {
+  const runtime = nestedRecord(value, "runtime");
+  const execution = nestedRecord(runtime, "execution");
+  const workflow = nestedRecord(value, "workflow");
+  const rag = nestedRecord(value, "rag");
+  const embedding = nestedRecord(value, "embedding");
+  const stores = nestedRecord(value, "stores");
+  const vector = nestedRecord(stores, "vector");
+  const temporalEnabled = execution.provider === "temporal";
+  const ragEnabled = typeof rag.provider === "string" && rag.provider !== "disabled";
+
+  return (
+    <section className="config-integration-overview" aria-labelledby="integration-overview-title">
+      <div className="config-integration-heading">
+        <div>
+          <p>当前运行链路</p>
+          <h3 id="integration-overview-title">Gaia 正在怎样连接外部能力</h3>
+        </div>
+        <span>根据当前生效配置生成</span>
+      </div>
+      <div className="config-integration-grid">
+        <article className="integration-card">
+          <header>
+            <div>
+              <p>任务编排</p>
+              <h4>长任务如何可靠执行</h4>
+            </div>
+            <strong className={temporalEnabled ? "integration-status active" : "integration-status"}>
+              {temporalEnabled ? "Temporal 耐久执行" : "进程内开发执行"}
+            </strong>
+          </header>
+          <p className="integration-explanation">
+            {temporalEnabled
+              ? "Gaia API 把运行交给 Temporal，Worker 从任务队列领取工作；实际副本数和调度策略由 Helm 或其他部署系统决定。"
+              : "仅用于开发、测试和单机 PoC：Scenario 在应用进程内完成，Run 与事件证据写入 Gaia 数据库；customer 生产环境禁止使用。"}
+          </p>
+          <ol className="integration-flow" aria-label="运行执行链路">
+            <li>API 接收 Run</li>
+            {temporalEnabled ? <li>Temporal 持久化编排</li> : <li>应用进程内执行</li>}
+            {temporalEnabled ? <li>Worker 领取任务</li> : <li>Gaia 保存运行证据</li>}
+            <li>{providerName(workflow.provider)} 执行业务逻辑</li>
+          </ol>
+          <dl className="integration-details">
+            <div><dt>执行方式</dt><dd>{temporalEnabled ? "外部耐久编排" : "应用进程内"}</dd></div>
+            <div><dt>执行后端</dt><dd>{providerName(execution.provider)}</dd></div>
+            {temporalEnabled ? <div><dt>任务队列</dt><dd>{configuredValue(execution.task_queue)}</dd></div> : null}
+          </dl>
+        </article>
+
+        <article className="integration-card">
+          <header>
+            <div>
+              <p>企业知识检索</p>
+              <h4>业务资料如何进入模型上下文</h4>
+            </div>
+            <strong className={ragEnabled ? "integration-status active" : "integration-status warning"}>
+              {ragEnabled ? "RAG 已接入" : "RAG 当前未启用"}
+            </strong>
+          </header>
+          <p className="integration-explanation">
+            {ragEnabled
+              ? "Gaia 会切分业务文档、生成向量并检索相关内容，再把检索结果注入模型上下文。"
+              : "当前请求不会检索企业知识。要启用完整 RAG，需要同时配置知识检索、Embedding 服务和向量存储。"}
+          </p>
+          <ol className="integration-flow rag-flow" aria-label="RAG 知识链路">
+            <li>业务文档</li>
+            <li>文档分块</li>
+            <li>Embedding</li>
+            <li>向量存储</li>
+            <li>相关内容检索</li>
+            <li>注入模型上下文</li>
+          </ol>
+          <dl className="integration-details">
+            <div><dt>知识检索</dt><dd>{providerName(rag.provider)}</dd></div>
+            <div><dt>Embedding</dt><dd>{providerName(embedding.provider)}</dd></div>
+            <div><dt>向量存储</dt><dd>{providerName(vector.provider)}</dd></div>
+          </dl>
+        </article>
+      </div>
+    </section>
+  );
+}
 
 export function fieldLabel(path: string): string {
   const key = path.split(".").at(-1) ?? path;
@@ -187,6 +297,7 @@ export function ConfigForm({
   }
   return (
     <div className="config-workspace read-only">
+      <ConfigIntegrationOverview value={value} />
       <div className="config-tabs" role="tablist" aria-label="配置分类">
         {availableTabs.map((tab) => (
           <button
@@ -447,4 +558,38 @@ export function displayValue(value: unknown): string {
 
 function isRecord(value: unknown): value is DataRecord {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+// A label/value pair. Lives here rather than in `Console.tsx` because the run
+// evidence page needs it too, and one definition is the point.
+export function Metric({ label, value }: { label: string; value: string }) {
+  return (
+    <dl>
+      <dt>{label}</dt>
+      <dd>{value}</dd>
+    </dl>
+  );
+}
+
+export function shorten(value: string, keep = 12): string {
+  return value.length <= keep ? value : `${value.slice(0, keep)}…`;
+}
+
+/** A short identifier with the full value one hover (or one click) away. */
+export function Identifier({ label, value }: { label: string; value: string }) {
+  return (
+    <dl>
+      <dt>{label}</dt>
+      <dd>
+        <button
+          type="button"
+          className="identifier-copy"
+          title={value}
+          onClick={() => void navigator.clipboard?.writeText(value)}
+        >
+          {shorten(value)}
+        </button>
+      </dd>
+    </dl>
+  );
 }

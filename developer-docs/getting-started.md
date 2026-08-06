@@ -1,109 +1,105 @@
-# 创建第一个项目
+# 20 分钟走通 Gaia
 
-## 准备环境
+这一页只有一个目标：让你亲眼看到 Gaia 如何完成一次正常执行、拦下一次危险执行，并留下证据。
 
-当前 Gaia 尚未发布到公共包仓库，需要 Python 3.12 和
-[uv](https://docs.astral.sh/uv/)。
+你不需要先理解 Runtime、Workflow History 或状态机。先建立直觉，再决定是否深入。
 
-```bash
-export GAIA_REPO=/absolute/path/to/gaia
-export APP_DIR=/absolute/path/to/my-gaia-app
+## 第 1 步：启动完整演示
 
-cd "$GAIA_REPO"
-uv sync --all-groups
-uv run gaia init "$APP_DIR" --name my-gaia-app
-```
-
-`gaia init` 默认生成最小项目。也可以直接选择场景和组件：
+在 Gaia 仓库根目录运行：
 
 ```bash
-uv run gaia init "$APP_DIR" \
-  --template knowledge \
-  --component prompt-registry
+make setup   # 第一次使用时运行
+make demo
 ```
 
-| 模板 | 适合的应用 |
+`make demo` 会启动一套隔离的核心环境，包括 API、Worker、Temporal、数据库和 Console。它不会
+使用日常开发数据库。文档和仓库外的 HR Showcase 是可选增强项：本地依赖完整时一并启动，缺失
+时不影响核心演示。终端最后会打印本次真正可访问的地址；先打开
+`http://127.0.0.1:4180/#demo`。不同启动方式不要混用端口，完整对照见
+[选择运行与部署方式](runtime-profiles.md)。
+
+如果依赖已经安装，以后只需运行 `make demo`。
+
+## 第 2 步：先看三个结果，不看代码
+
+Console 演示首页预置三种执行结果；如果终端同时打印了 HR Showcase 地址，还可以从三个 HR
+业务场景发起新的 Run。先按顺序查看这三种结果：
+
+| 结果 | 你应该观察什么 | 它证明什么 |
+| --- | --- | --- |
+| 正常读取并完成 | Run 顺利到达完成状态 | Gaia 可以承载普通业务执行，不是所有动作都需要审批 |
+| 高风险动作等待确认 | Run 停在 Gate，页面展示待执行动作 | 审批发生在副作用之前，而不是事后补签 |
+| 策略拒绝动作 | Run 被明确拦下 | 被控制拒绝不是系统故障，也不会偷偷重试成成功 |
+
+先回答三个问题：发生了什么、为什么停下、下一步由谁决定。能回答出来，就已经掌握了 Gaia 最重要的使用方式。
+
+## 第 3 步：打开一次 Run 的证据
+
+在 Console 中进入某个 Run 的“看证据”页面，按这个顺序阅读：
+
+1. **结论**：完成、等待、受控拒绝，还是系统失败。
+2. **执行轨迹**：业务从哪一步走到哪一步。
+3. **人工 Gate**：要求批准的具体动作、决定者和结果。
+4. **工具证据**：调用了哪个工具，准入或阻断原因是什么。
+5. **模型证据**：用了哪个模型配置，发生了哪些模型调用。
+
+证据页不是为了展示技术字段，而是回答：
+
+> 这个结果能否被业务负责人、运维人员和审计人员共同解释？
+
+想了解每类证据的来源，再读 [运行机制](mechanisms.md)。
+
+## 第 4 步：把页面映射到代码
+
+最小示例在仓库的 `examples/function_task/README.md`。第一次只看四个文件：
+
+| 文件 | 用人话解释 |
 | --- | --- |
-| `basic` | 总结、分类、信息抽取和内容生成 |
-| `knowledge` | 基于企业资料回答并标明来源 |
-| `approval` | 调用业务接口并在关键步骤人工确认 |
+| `flows.py` | 定义“这件事分几步做、下一步是什么” |
+| `tools.py` | 定义“真正读取或改变业务系统的动作” |
+| `gaia.yaml` | 定义“哪些工具允许用、风险和运行配置是什么” |
+| `app.py` | 把业务定义装进 Gaia API |
 
-## 安装并检查
+你不需要在业务代码里手工实现数据库锁、审批等待、恢复循环或审计写入。Gaia 的价值正是把这些横切能力从每个场景中拿走。
 
-```bash
-cd "$APP_DIR"
-uv add --editable "$GAIA_REPO"
-uv sync
-uv run gaia check --config gaia.yaml
-uv run pytest -q
-```
+<div class="gaia-composition" role="img" aria-label="业务代码如何组装进 Gaia">
+  <div class="gaia-composition__inputs">
+    <div><code>flows.py</code><strong>下一步做什么</strong></div>
+    <div><code>tools.py</code><strong>怎样操作业务系统</strong></div>
+    <div><code>gaia.yaml</code><strong>允许什么</strong></div>
+  </div>
+  <div class="gaia-composition__core"><small>受控执行层</small><strong>Gaia</strong></div>
+  <div class="gaia-composition__outputs">
+    <div><strong>API / Console</strong><small>创建与查看 Run</small></div>
+    <div><strong>持久执行</strong><small>等待、重试与恢复</small></div>
+    <div><strong>审计证据</strong><small>解释发生了什么</small></div>
+  </div>
+</div>
 
-正式交付时，把 editable 依赖替换为固定版本的内部 wheel。
+## 第 5 步：判断下一步学什么
 
-## 启动开发服务
+### 你要实现业务场景
 
-```bash
-GAIA_API_KEY=local-dev-key \
-GAIA_DEVTOOLS_ENABLED=true \
-GAIA_PROJECT_ROOT=. \
-uv run gaia dev --app my_gaia_app.app:app --reload
-```
+去 [开发者指南](developer-guide.md)，从复制最小示例、替换一个只读工具开始，不要先改 Runtime。
 
-验证服务：
+### 你要负责架构或生产化
 
-```bash
-curl -fsS http://127.0.0.1:8000/health/live
-```
+去 [Gaia 全景图](architecture.md)，重点看责任边界、数据库归属和部署单元。
 
-创建第一个 Run：
+## 常见误区
 
-```bash
-curl -fsS -X POST http://127.0.0.1:8000/v1/runs \
-  -H 'Content-Type: application/json' \
-  -H 'X-Gaia-Api-Key: local-dev-key' \
-  -H 'Idempotency-Key: quick-start-001' \
-  -d '{
-    "scenario_id": "hello",
-    "mode": "mock",
-    "user": {
-      "id": "developer",
-      "organization": "example",
-      "roles": ["user"]
-    },
-    "request": {"text": "Gaia"}
-  }'
-```
+- **先读完所有架构再运行**：不需要。先完成本页，再按问题查进阶文档。
+- **把所有业务逻辑写进 Prompt**：关键权限和风险规则必须是可执行控制，不应只靠模型自觉。
+- **审批放在工具执行之后**：这只能记录事故，不能阻止副作用。
+- **把“被策略拒绝”当失败率**：拒绝说明控制生效；真正的失败是系统没有按设计运行。
+- **一开始就重构 Runtime**：先用现有扩展点完成一个业务闭环，只有明确缺口才进入底层。
 
-## 查看运行证据
+## 你完成了什么
 
-打开 Dev Console 的“运行”，输入 Run ID 后可以在同一个详情区切换：
+走完这一页，你应该能用自己的话解释：
 
-- **运行结果**：最终状态与业务结果；
-- **模型调用**：模型、Prompt 版本、Token 和耗时；
-- **安全决策**：输入、检索、输出和工具边界的放行、改写、阻断或异常；
-- **事件链**：Runtime 状态变化和执行顺序。
-
-新项目不会自动获得客户行业规则。先使用确定性 Pattern 验证接入，再根据真实数据选择
-Presidio、Guardrails AI 或项目自有 Guardrail。装配方式见[安全防护](guardrails.md)。
-
-Prompt 菜单不会因 Provider 未启用而消失。默认文件模式展示只读 Artifact 清单；需要频繁调整、
-多人发布和回滚时再切换到 PostgreSQL Registry。开发工作区必须显式开启，生产应用不会注册
-这些管理路由。
-
-## 生成项目里有什么
-
-| 文件 | 用途 |
-| --- | --- |
-| `src/<package>/app.py` | ASGI 入口和 Scenario 注册 |
-| `src/<package>/scenarios/` | 应用拥有的场景代码 |
-| `prompts/` | Git 管理的 Prompt Artifact |
-| `gaia.yaml` | Profile、Starter 和基础设施配置 |
-| `tests/` | 穿过真实 Runtime 的应用测试 |
-| `.env.example` | 所需环境变量，不包含真实密钥 |
-
-生成的 `app.py` 同时提供 `create_application()` 和模块级 `app`。Uvicorn 使用 `app`；测试调用
-`create_application()`，确保每个 Case 获得独立的 `GaiaApplication` 生命周期。
-
-Prompt 和 RAG 的相对目录以 `gaia.yaml` 所在目录为基准，不依赖启动命令的当前工作目录。
-
-继续阅读：[命令行参考](cli.md)。
+1. Gaia 解决的是受控执行，而不是模型能力本身。
+2. 一次 Run 可以完成、等待、被拒绝或失败，这四者含义不同。
+3. 业务流程、工具、策略和运行底座属于不同职责。
+4. 下一步应该改示例和配置，而不是先改 Runtime。

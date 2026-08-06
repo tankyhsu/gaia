@@ -1,7 +1,11 @@
 # ADR 0001：ScenarioRunner 是唯一 Runtime 扩展边界
 
-- 状态：已接受
+- 状态：部分被 Temporal 迁移取代
 - 日期：2026-07-23
+
+> `ScenarioRunner` 作为逻辑编排窄端口的决定仍然有效；本文关于
+> `PersistentRuntimeEngine` 持有状态、恢复和副作用所有权的决定已被
+> [Temporal 迁移任务清单](../施工图/17-TemporalIO-迁移任务清单.md)取代。
 
 ## 背景
 

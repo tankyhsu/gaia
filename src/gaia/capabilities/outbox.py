@@ -9,7 +9,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from gaia.persistence.models import OutboxEventRecord
-from gaia.sdk.events import EventEnvelope, EventPublisher
+from gaia.spi.events import EventEnvelope, EventPublisher
 
 PENDING = "pending"
 PUBLISHED = "published"

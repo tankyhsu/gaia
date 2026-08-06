@@ -20,6 +20,54 @@
   font-size: 0.78rem;
 }
 
+.md-typeset .gaia-demo-recording {
+  display: block;
+  width: 100%;
+  margin: 1.5rem 0 2rem;
+  border: 1px solid #d1dfdb;
+  border-radius: 16px;
+  box-shadow: 0 18px 45px rgb(19 48 42 / 16%);
+}
+
+.md-typeset .gaia-scenario-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.9rem;
+  margin: 1.5rem 0 2.2rem;
+}
+
+.md-typeset .gaia-scenario-grid article {
+  padding: 1.1rem;
+  background: #f7faf9;
+  border: 1px solid #d4e2de;
+  border-top: 4px solid #39836f;
+  border-radius: 12px;
+}
+
+.md-typeset .gaia-scenario-grid span,
+.md-typeset .gaia-scenario-grid strong {
+  display: block;
+}
+
+.md-typeset .gaia-scenario-grid span {
+  margin-bottom: 0.55rem;
+  color: #397968;
+  font-size: 0.66rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
+.md-typeset .gaia-scenario-grid strong {
+  min-height: 2.8rem;
+  color: #173b34;
+}
+
+.md-typeset .gaia-scenario-grid p {
+  margin-bottom: 0;
+  color: #5e6f6a;
+  font-size: 0.76rem;
+}
+
 .audience-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -67,7 +115,242 @@
     grid-template-columns: 1fr;
   }
 
+  .md-typeset .gaia-scenario-grid {
+    grid-template-columns: 1fr;
+  }
+
   .md-typeset .audience-entry {
     min-height: 0;
+  }
+}
+.md-typeset .gaia-step-flow,
+.md-typeset .gaia-journey,
+.md-typeset .gaia-module-map,
+.md-typeset .gaia-deployment {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(9rem, 1fr);
+  gap: 0.75rem;
+  margin: 1.6rem 0 2rem;
+  padding: 1rem;
+  overflow-x: auto;
+  background: #f4f8f7;
+  border: 1px solid #d4e2de;
+  border-radius: 16px;
+}
+
+.md-typeset .gaia-step,
+.md-typeset .gaia-journey li,
+.md-typeset .gaia-module-map section,
+.md-typeset .gaia-deployment > div {
+  position: relative;
+  min-width: 9rem;
+  padding: 1rem;
+  background: #fff;
+  border: 1px solid #d8e2df;
+  border-radius: 12px;
+  box-shadow: 0 6px 18px rgb(31 65 57 / 7%);
+  list-style: none;
+}
+
+.md-typeset .gaia-step span,
+.md-typeset .gaia-journey span,
+.md-typeset .gaia-module-map span,
+.md-typeset .gaia-deployment span {
+  display: block;
+  margin-bottom: 0.6rem;
+  color: #397968;
+  font-size: 0.65rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.md-typeset .gaia-step strong,
+.md-typeset .gaia-journey strong,
+.md-typeset .gaia-deployment strong {
+  display: block;
+  margin-bottom: 0.35rem;
+  color: #173b34;
+}
+
+.md-typeset .gaia-step small,
+.md-typeset .gaia-journey small,
+.md-typeset .gaia-deployment small {
+  display: block;
+  color: #63736f;
+  line-height: 1.5;
+}
+
+.md-typeset .gaia-step--control,
+.md-typeset .gaia-module-map__control,
+.md-typeset .gaia-journey__gate {
+  background: #e4f2ed;
+  border-color: #76a999;
+}
+
+.md-typeset .gaia-step--evidence {
+  background: #fff4df;
+  border-color: #d7ad64;
+}
+
+.md-typeset .gaia-composition {
+  display: grid;
+  grid-template-columns: 1fr 9rem 1fr;
+  gap: 1rem;
+  align-items: stretch;
+  margin: 1.6rem 0 2rem;
+  padding: 1.2rem;
+  background: #f4f8f7;
+  border: 1px solid #d4e2de;
+  border-radius: 16px;
+}
+
+.md-typeset .gaia-composition__inputs,
+.md-typeset .gaia-composition__outputs {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.md-typeset .gaia-composition__inputs div,
+.md-typeset .gaia-composition__outputs div {
+  padding: 0.8rem;
+  background: #fff;
+  border: 1px solid #d8e2df;
+  border-radius: 10px;
+}
+
+.md-typeset .gaia-composition strong,
+.md-typeset .gaia-composition small,
+.md-typeset .gaia-composition code {
+  display: block;
+}
+
+.md-typeset .gaia-composition__core {
+  display: grid;
+  place-content: center;
+  text-align: center;
+  color: #fff;
+  background: #176f5e;
+  border-radius: 14px;
+}
+
+.md-typeset .gaia-composition__core strong {
+  font-size: 1.35rem;
+}
+
+.md-typeset .gaia-architecture {
+  margin: 1.8rem 0 2.4rem;
+  padding: 1rem;
+  background: #122f2a;
+  border-radius: 18px;
+  box-shadow: 0 18px 45px rgb(19 48 42 / 18%);
+}
+
+.md-typeset .gaia-architecture > header {
+  padding: 0.5rem 0.6rem 1.1rem;
+  color: #fff;
+}
+
+.md-typeset .gaia-architecture > header span {
+  display: block;
+  color: #8fd0bd;
+  font-size: 0.65rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+}
+
+.md-typeset .gaia-architecture > header strong {
+  font-size: 1.05rem;
+}
+
+.md-typeset .gaia-lane {
+  display: grid;
+  grid-template-columns: 7rem 1fr;
+  gap: 0.8rem;
+  margin-bottom: 0.55rem;
+  padding: 0.75rem;
+  background: #f8fbfa;
+  border-left: 4px solid #7ca398;
+  border-radius: 10px;
+}
+
+.md-typeset .gaia-lane h3 {
+  margin: 0;
+  color: #35534b;
+  font-size: 0.75rem;
+}
+
+.md-typeset .gaia-lane > div {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(7.5rem, 1fr));
+  gap: 0.5rem;
+}
+
+.md-typeset .gaia-lane article {
+  padding: 0.65rem;
+  background: #fff;
+  border: 1px solid #dbe5e2;
+  border-radius: 8px;
+}
+
+.md-typeset .gaia-lane article strong,
+.md-typeset .gaia-lane article small {
+  display: block;
+}
+
+.md-typeset .gaia-lane article small {
+  margin-top: 0.2rem;
+  color: #6b7c77;
+}
+
+.md-typeset .gaia-lane--people { border-left-color: #d3a14d; }
+.md-typeset .gaia-lane--entry { border-left-color: #6488b6; }
+.md-typeset .gaia-lane--control { border-left-color: #2d8b72; }
+.md-typeset .gaia-lane--runtime { border-left-color: #6e789f; }
+.md-typeset .gaia-lane--business { border-left-color: #9a6aa4; }
+
+.md-typeset .gaia-architecture > footer {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.5rem;
+  padding-top: 0.45rem;
+}
+
+.md-typeset .gaia-architecture > footer span {
+  padding: 0.55rem;
+  color: #d8e7e2;
+  font-size: 0.68rem;
+  text-align: center;
+  border: 1px solid #39554e;
+  border-radius: 8px;
+}
+
+.md-typeset .gaia-module-map section h3 {
+  margin: 0 0 0.8rem;
+  font-size: 0.9rem;
+}
+
+.md-typeset .gaia-module-map section p {
+  margin: 0.35rem 0;
+  color: #5e6f6a;
+  font-size: 0.72rem;
+}
+
+@media screen and (max-width: 44.984375em) {
+  .md-typeset .gaia-composition {
+    grid-template-columns: 1fr;
+  }
+
+  .md-typeset .gaia-composition__core {
+    min-height: 7rem;
+  }
+
+  .md-typeset .gaia-lane {
+    grid-template-columns: 1fr;
+  }
+
+  .md-typeset .gaia-architecture > footer {
+    grid-template-columns: repeat(2, 1fr);
   }
 }

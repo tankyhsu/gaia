@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any, cast
 
@@ -11,14 +11,22 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict
 
+from gaia.contracts.models import UserIdentity
 from gaia.templates import (
+    BUSINESS_SCENARIO_TEMPLATES,
     COMPONENT_STARTERS,
-    SCENARIO_TEMPLATES,
     project_files,
     selected_starters,
 )
 
-Authorize = Callable[[Request], JSONResponse | None]
+# Resolves the caller identity for one request: `(identity, None)` when the
+# request may proceed (`identity` is `None` for a trusted-service caller with
+# no end-user identity), or `(None, response)` with a 401 `JSONResponse` when
+# authentication failed. Project init is not scoped to a single end user's
+# resources, so `identity` is accepted for symmetry with the rest of the API
+# surface (F1: no protected endpoint should discard it) but is not itself
+# consulted for an ownership decision here.
+Authorize = Callable[[Request], Awaitable[tuple[UserIdentity | None, JSONResponse | None]]]
 MARKER_PATH = Path(".gaia/init.json")
 
 
@@ -38,13 +46,17 @@ def create_project_devtools_router(
 
     @router.get("/init", response_model=None)
     async def inspect_init(request: Request) -> dict[str, object] | JSONResponse:
-        if unauthorized := authorize(request):
+        _, unauthorized = await authorize(request)
+        if unauthorized:
             return unauthorized
         marker = _read_marker(root)
+        selected_template = "knowledge" if marker is None else str(marker["template_id"])
+        if selected_template not in BUSINESS_SCENARIO_TEMPLATES:
+            selected_template = "knowledge"
         return {
             "available": marker is not None,
             "application_name": "" if marker is None else marker["application_name"],
-            "template_id": "basic" if marker is None else marker["template_id"],
+            "template_id": selected_template,
             "starters": [] if marker is None else marker["starters"],
             "applied": False if marker is None else bool(marker.get("applied", False)),
             "templates": [
@@ -63,7 +75,7 @@ def create_project_devtools_router(
                         }
                     ),
                 }
-                for item in SCENARIO_TEMPLATES.values()
+                for item in BUSINESS_SCENARIO_TEMPLATES.values()
             ],
             "components": [
                 {"id": identifier, "name": name, "starter": starter}
@@ -76,7 +88,8 @@ def create_project_devtools_router(
         request: Request,
         body: ProjectInitRequest,
     ) -> dict[str, object] | JSONResponse:
-        if unauthorized := authorize(request):
+        _, unauthorized = await authorize(request)
+        if unauthorized:
             return unauthorized
         marker = _read_marker(root)
         if marker is None:
@@ -84,7 +97,7 @@ def create_project_devtools_router(
                 status_code=409,
                 content={"code": "PROJECT_INIT_NOT_AVAILABLE", "message": "项目已经完成初始化。"},
             )
-        if body.template_id not in SCENARIO_TEMPLATES:
+        if body.template_id not in BUSINESS_SCENARIO_TEMPLATES:
             return JSONResponse(
                 status_code=422,
                 content={"code": "UNKNOWN_SCENARIO_TEMPLATE", "message": "未知的场景模板。"},
@@ -124,7 +137,8 @@ def create_project_devtools_router(
 
     @router.post("/init/complete", response_model=None)
     async def complete_init(request: Request) -> dict[str, object] | JSONResponse:
-        if unauthorized := authorize(request):
+        _, unauthorized = await authorize(request)
+        if unauthorized:
             return unauthorized
         marker = _read_marker(root)
         if marker is None:

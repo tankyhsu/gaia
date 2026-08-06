@@ -38,7 +38,11 @@ def main() -> None:
             "--starter",
             "workflow-langgraph",
         )
-        run(str(gaia), "check", "--config", "gaia.yaml", cwd=application)
+        # Scaffold contract (see `gaia init` output and the generated README):
+        # a generated project must be installed (editable) before `gaia check`
+        # can import its `scenarios.modules`. Declarative assembly means
+        # `gaia check` now imports the scenario modules it discovers, so the
+        # package must be on the interpreter's import path first.
         run(
             "uv",
             "pip",
@@ -49,6 +53,7 @@ def main() -> None:
             "-e",
             str(application),
         )
+        run(str(gaia), "check", "--config", "gaia.yaml", cwd=application)
         run(str(python), "-m", "pytest", "-q", cwd=application)
         run(
             str(python),

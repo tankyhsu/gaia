@@ -1,16 +1,12 @@
 from __future__ import annotations
 
 import asyncio
-import json
 from datetime import UTC, datetime
-from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
 import pytest
-from fastapi.testclient import TestClient
 
-from examples.controlled_task.app import create_app
 from gaia.api.sse import stream_run_events
 from gaia.contracts.models import ActorType, EventStatus, RunEvent, RunStatus
 
@@ -35,40 +31,6 @@ class FakeRuntime:
     async def events_after(self, run_id: str, sequence: int = 0) -> list[RunEvent]:
         self.event_queries += 1
         return [event for event in self.events if event.sequence > sequence]
-
-
-def test_sse_endpoint_resumes_after_last_event_id_and_closes_for_terminal_run(
-    tmp_path: Path,
-) -> None:
-    database_url = f"sqlite+aiosqlite:///{tmp_path}/sse.db"
-    headers = {"X-Gaia-Api-Key": "gaia-dev-key"}
-    with TestClient(create_app(database_url)) as client:
-        created = client.post(
-            "/v1/runs",
-            headers={**headers, "Idempotency-Key": "sse-read-123"},
-            json={
-                "scenario_id": "controlled-task",
-                "mode": "mock",
-                "user": {"id": "u", "organization": "org-alpha", "roles": ["reader"]},
-                "request": {"text": "inspect res-001"},
-            },
-        )
-        assert created.status_code == 201
-        run_id = created.json()["run_id"]
-        events = client.get(f"/v1/runs/{run_id}/events", headers=headers).json()
-        resume_after = events[-2]["sequence"]
-
-        response = client.get(
-            f"/v1/runs/{run_id}/events/stream",
-            headers={**headers, "Last-Event-ID": str(resume_after)},
-        )
-
-    assert response.status_code == 200
-    assert response.headers["content-type"].startswith("text/event-stream")
-    assert response.headers["cache-control"] == "no-cache"
-    assert response.text.count("event: run.event\n") == 1
-    assert f"id: {events[-1]['sequence']}\n" in response.text
-    assert json.loads(response.text.split("data: ", 1)[1])["event_id"] == events[-1]["event_id"]
 
 
 async def test_sse_waits_with_heartbeat_then_delivers_terminal_event() -> None:

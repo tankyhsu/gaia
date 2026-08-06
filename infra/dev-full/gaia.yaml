@@ -1,0 +1,74 @@
+gaia:
+  application:
+    name: controlled-task-dev-full
+    version: 1.0.0
+  profile: dev-full
+  starters:
+    - persistence-postgres
+    - checkpoint-postgres
+    - model-openai-compatible
+    - context-mock
+    - policy-controlled
+    - evaluation-fixtures
+    - cache-redis
+    - rate-limit-redis
+    - publisher-in-process
+    - outbox-postgres
+    - import: examples.controlled_task.starter:STARTER
+  runtime:
+    database_url:
+      env: GAIA_POSTGRES_URL
+    environment: sandbox
+    write_mode: approval_required
+    execution:
+      provider: temporal
+      server_address: temporal:7233
+      namespace: gaia-dev-full
+      task_queue: gaia-dev-full
+      tls_enabled: false
+  stores:
+    operational:
+      provider: postgres
+      auto_create: false
+      pool_size: 5
+      max_overflow: 10
+    checkpoint:
+      provider: postgres
+      auto_setup: true
+      pool_min_size: 1
+      pool_max_size: 5
+  redis:
+    url:
+      env: GAIA_REDIS_URL
+  cache:
+    provider: redis
+  rate_limit:
+    provider: redis
+  outbox:
+    provider: postgres
+    publisher: in-process
+  model:
+    provider: openai-compatible
+    model_id: deepseek-chat
+    base_url: https://api.deepseek.com/v1
+    api_key:
+      env: DEEPSEEK_API_KEY
+    timeout_seconds: 60
+  workflow:
+    provider: langgraph
+  context:
+    provider: mock
+  policy:
+    provider: controlled
+    human_gate_ttl_seconds: 3600
+  observability:
+    provider: langfuse
+    base_url: http://langfuse-web:3000
+    public_key:
+      env: LANGFUSE_PUBLIC_KEY
+    secret_key:
+      env: LANGFUSE_SECRET_KEY
+    environment: dev-full
+    sample_rate: 1.0
+  evaluation:
+    cases: /app/examples/controlled_task/specs/acceptance-cases.json

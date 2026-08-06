@@ -3,6 +3,9 @@
 状态：Accepted
 日期：2026-07-24
 
+> Guardrail SPI 和无正文审计决定仍然有效。SQL Sink 只保存观察证据，并以 Temporal
+> `run_id` 作为外部关联标识；它不再依赖或创建 Gaia SQL Run。
+
 ## 背景
 
 企业 AI 防护不是一个过滤函数。输入、检索结果、模型输出、工具参数和工具结果的风险不同，
@@ -25,13 +28,14 @@ SHA-256 引用。需要强审计的环境可以启用 `audit_required`，使审�
 Model Provider 的推荐装饰顺序是：
 
 ```text
-InstrumentedModelProvider
-  └── GuardedModelProvider
+GuardedModelProvider
+  └── InstrumentedModelProvider
         └── OpenAICompatibleProvider
 ```
 
-这样输入拦截、输出拦截和防护组件故障都进入现有模型调用观测。Retrieval 与 Tool 阶段由应用
-在相应执行边界调用同一个 `GuardrailPipeline`，不伪装成模型调用。
+这样输入拦截发生在模型调用证据创建之前；输出拦截保留已经完成的 Provider 调用证据，并形成
+独立 Guardrail 决策。Retrieval 与 Tool 阶段由 Builder 在相应执行边界装配同一个
+`GuardrailPipeline`，不伪装成模型调用。
 
 ## 第三方适配
 
@@ -40,8 +44,9 @@ InstrumentedModelProvider
 - NeMo Guardrails 只有在产品确实需要对话状态机时才作为外部集成评估，不进入通用 Runtime；
 - LLM Guard 不作为 Starter。其上游仓库已归档，不能承担 Gaia 默认生产安全底座。
 
-Gaia 暂不提供自动装配的第三方 Guardrail Starter。先由真实应用验证策略组合、模型资源、
-延迟和误报率，再决定是否把稳定组合提升为 Starter。
+Gaia 暂不提供固定策略的第三方 Guardrail Starter。应用通过统一 SPI 把第三方 Validator
+显式绑定到五阶段；先由真实应用验证策略组合、模型资源、延迟和误报率，再决定是否把稳定组合
+提升为 Starter。
 
 ## 后果
 

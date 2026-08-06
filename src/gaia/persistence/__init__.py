@@ -4,7 +4,7 @@ from gaia.persistence.checkpoint import InMemoryCheckpointProvider, SqliteCheckp
 from gaia.persistence.postgres import PostgresCheckpointProvider, PostgresMemoryStore
 from gaia.persistence.resources import GaiaPersistenceResources
 from gaia.persistence.urls import database_backend, psycopg_url, sqlalchemy_async_url
-from gaia.sdk.memory import MemoryItem
+from gaia.spi.memory import MemoryItem
 
 __all__ = [
     "MemoryItem",

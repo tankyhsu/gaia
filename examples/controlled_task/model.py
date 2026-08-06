@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 from pydantic import BaseModel
 
 from gaia.contracts.models import ModelEndpointProfile, ModelHealth
-from gaia.sdk.model import ModelCallContext, ModelMessage, ModelResult
+from gaia.spi.model import ModelCallContext, ModelMessage, ModelResult
 
 RESOURCE_PATTERN = re.compile(r"res-[0-9]{3}")
 

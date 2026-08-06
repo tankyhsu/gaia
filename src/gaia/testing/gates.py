@@ -6,6 +6,7 @@ import math
 from collections.abc import Mapping, Sequence
 from typing import Literal, cast
 
+from gaia.contracts.models import VersionBundle
 from gaia.testing.models import EvaluationResult, GateContext, GateResult, TestCase
 
 AttemptPolicy = Literal["all", "any", "mean"]
@@ -167,6 +168,81 @@ class PassRateGate:
         if self._score_operator == "gte":
             return value >= self._case_threshold
         return value <= self._case_threshold
+
+
+class VersionBundleGate:
+    """Fail a test run whose subject was not produced by the expected version evidence.
+
+    `GateContext.subject` is the established, application-populated place for "what is
+    under test" (see the `prompt_id`/`prompt_version`/`prompt_content_hash` pattern
+    already used for exact prompt binding). This gate expects the caller of
+    `GaiaTestKit.run(..., subject=...)` to have populated `subject` with the relevant
+    fields of the subject's `VersionBundle` (for example
+    `dict(spec.version_bundle.model_dump())`, or a curated subset). It does not read a
+    `VersionBundle` off the context directly -- `GateContext` has no such attribute --
+    so wiring the subject dict correctly is the caller's responsibility.
+
+    This exists because version evidence that can drift from reality is worse than no
+    version evidence at all: it looks authoritative but no longer describes what
+    actually ran. `VersionBundleGate` turns "did governance/rules/policy version change
+    unexpectedly" into an explicit, reviewable CI gate instead of a silent surprise in
+    the audit trail.
+    """
+
+    def __init__(
+        self,
+        *,
+        expected: Mapping[str, str],
+        gate_id: str = "version-bundle",
+        gate_version: str = "1.0.0",
+    ) -> None:
+        if not gate_id or not gate_version:
+            raise ValueError("gate_id and gate_version are required")
+        if not expected:
+            raise ValueError("expected must not be empty")
+        unknown_fields = sorted(set(expected) - set(VersionBundle.model_fields))
+        if unknown_fields:
+            raise ValueError(f"expected has unknown VersionBundle field(s): {unknown_fields}")
+
+        self._expected = dict(expected)
+        self._gate_id = gate_id
+        self._gate_version = gate_version
+
+    @property
+    def gate_id(self) -> str:
+        return self._gate_id
+
+    @property
+    def gate_version(self) -> str:
+        return self._gate_version
+
+    async def evaluate(self, context: GateContext) -> GateResult:
+        missing_fields: list[str] = []
+        mismatches: dict[str, dict[str, str]] = {}
+        for field, expected_value in self._expected.items():
+            actual_value = context.subject.get(field)
+            if actual_value is None:
+                missing_fields.append(field)
+            elif actual_value != expected_value:
+                mismatches[field] = {"expected": expected_value, "actual": actual_value}
+
+        reasons: list[str] = []
+        if missing_fields:
+            reasons.append("version_field_missing")
+        if mismatches:
+            reasons.append("version_mismatch")
+
+        return GateResult(
+            gate_id=self.gate_id,
+            gate_version=self.gate_version,
+            passed=not reasons,
+            reasons=tuple(reasons),
+            details={
+                "expected": self._expected,
+                "missing_fields": missing_fields,
+                "mismatches": mismatches,
+            },
+        )
 
 
 def _summarize(cases: Sequence[TestCase], outcomes: Mapping[str, bool | None]) -> dict[str, object]:

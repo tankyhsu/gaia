@@ -13,6 +13,10 @@ gaia:
   runtime:
     database_url: sqlite+aiosqlite:///./var/gaia.db
     environment: mock
+    # The API is a Temporal client. Start the matching application Worker with
+    # `make dev-worker`; `make demo` starts both plus a local Temporal Server.
+    execution:
+      provider: temporal
   stores:
     operational:
       provider: sqlite

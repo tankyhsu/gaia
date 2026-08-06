@@ -111,3 +111,10 @@ above the repository. Local hooks are workflow guardrails. GitHub required check
 authoritative merge gate.
 External-model tests remain explicit local opt-in checks during development; scheduled and release
 workflows will be introduced only when Gaia enters a release phase.
+
+## Publish developer documentation
+
+`.github/workflows/pages.yml` builds the same MkDocs site checked by `make docs` and deploys it only
+from `main`. The repository must use **Settings → Pages → Build and deployment → Source: GitHub
+Actions**. Pull requests use the normal CI documentation check and never receive Pages write or
+OpenID Connect permissions.

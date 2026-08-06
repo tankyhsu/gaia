@@ -3,31 +3,29 @@ import {
   ArrowRight,
   BookOpen,
   Boxes,
+  BriefcaseBusiness,
   CheckCircle2,
   CircleDashed,
   CircleAlert,
   ClipboardList,
   ExternalLink,
   FileText,
+  ChartNoAxesCombined,
   Play,
   RefreshCw,
   Search,
   ShieldCheck,
   SlidersHorizontal,
+  Sparkles,
   Upload,
 } from "lucide-react";
 import { useEffect, useState } from "react";
+import type { ReactNode } from "react";
 
 import {
   actuator,
   applyProjectInit,
   completeProjectInit,
-  decideGate,
-  getEvents,
-  getGuardrailDecisions,
-  getGate,
-  getModelInvocations,
-  getRun,
   importPrompt,
   inspectProjectInit,
   inspectPrompt,
@@ -37,9 +35,16 @@ import {
   runReplay,
   runtimeSummary,
 } from "./api";
-import { ConfigForm, StructuredView, displayValue } from "./StructuredView";
+import { DemoTour } from "./DemoTour";
+import { ObservabilityView } from "./ObservabilityView";
+import { SHOWCASE_EXAMPLES, SHOWCASE_UNAVAILABLE, SHOWCASE_URL } from "./showcase";
+import { ConfigForm, Metric, StructuredView, displayValue } from "./StructuredView";
+import { message } from "./format";
+import { IssueTable, OperationsOverview, RunConsole } from "./RunsView";
 import type {
+  DiagnosticBundle,
   GuardrailDecision,
+  HumanGate,
   ProjectInitSnapshot,
   PromptArtifact,
   PromptRelease,
@@ -49,6 +54,9 @@ import type {
   RuntimeSummary,
   RunGuardrailObservability,
   RunModelObservability,
+  RunPage,
+  RunSnapshot,
+  RunToolObservability,
 } from "./types";
 
 type State = Record<string, unknown>;
@@ -60,21 +68,45 @@ interface ConfigSnapshot {
 }
 
 const navigation = [
-  ["overview", "概览", Activity],
-  ["components", "组件", Boxes],
-  ["runs", "运行", ShieldCheck],
-  ["config", "配置", SlidersHorizontal],
-  ["prompts", "Prompt", FileText],
-  ["tests", "测试", ClipboardList],
+  {
+    label: "体验",
+    items: [["demo", "演示", Sparkles]],
+  },
+  {
+    label: "运行与诊断",
+    items: [
+      ["overview", "概览", Activity],
+      ["runs", "运行", ShieldCheck],
+      ["observability", "可观测", ChartNoAxesCombined],
+    ],
+  },
+  {
+    label: "构建与治理",
+    items: [
+      ["components", "组件", Boxes],
+      ["prompts", "Prompt", FileText],
+      ["config", "配置", SlidersHorizontal],
+      ["tests", "测试", ClipboardList],
+    ],
+  },
 ] as const;
 
 const QUICKSTART_DISMISSED_KEY = "gaia.dev-console.quickstart.dismissed";
 const DEVELOPER_DOCS_URL =
   import.meta.env.VITE_GAIA_DOCS_URL ||
-  `${location.protocol}//${location.hostname}:4175/`;
-const SHOWCASE_URL =
-  import.meta.env.VITE_GAIA_SHOWCASE_URL ||
-  `${location.protocol}//${location.hostname}:4173/`;
+  (location.port === "4181"
+    ? `${location.origin}/docs/`
+    : `${location.protocol}//${location.hostname}:4175/`);
+// Whoever starts this Console knows whether the services it links to exist; a
+// browser-side probe cannot tell "not running" from "slow to answer".
+// `scripts/demo.py` sets these once it has health-checked (or given up on) each
+// one, so a link is rendered only when the process behind it is known to be
+// there -- otherwise it is shown disabled and labeled.
+const DOCS_UNAVAILABLE = import.meta.env.VITE_GAIA_DOCS_UNAVAILABLE === "true";
+// Set only by `scripts/demo.py`. Passed in rather than inferred from the port,
+// because "which port am I on" is not the same question as "is a demo audience
+// looking at this", and guessing wrong hides a tool a developer needs.
+const DEMO_MODE = import.meta.env.VITE_GAIA_DEMO_MODE === "true";
 
 const pageAliases: Record<string, string> = {
   workbench: "overview",
@@ -83,6 +115,8 @@ const pageAliases: Record<string, string> = {
   assembly: "components",
   capabilities: "components",
   governance: "runs",
+  telemetry: "observability",
+  tracing: "observability",
   quality: "tests",
   actuator: "overview",
 };
@@ -90,13 +124,14 @@ const pageAliases: Record<string, string> = {
 function initialPage() {
   const requested = location.hash.slice(1);
   if (requested) return pageAliases[requested] ?? requested;
+  // A demo audience that opens the bare URL must land on the demo, not on the
+  // project-init wizard. 快速开始 writes into `GAIA_PROJECT_ROOT`, which
+  // `scripts/demo.py` points at the Gaia repository itself -- one click from a
+  // viewer would modify the presenter's working tree.
+  if (DEMO_MODE) return "demo";
   return localStorage.getItem(QUICKSTART_DISMISSED_KEY) === "true"
     ? "overview"
     : "quickstart";
-}
-
-function message(error: unknown) {
-  return error instanceof Error ? error.message : "请求失败";
 }
 
 function items(value: unknown): State[] {
@@ -105,6 +140,44 @@ function items(value: unknown): State[] {
         (entry): entry is State => Boolean(entry && typeof entry === "object"),
       )
     : [];
+}
+
+// Renders a normal external link when the target is known to be running,
+// or a disabled, explicitly-labeled stand-in when it is not (see
+// `DOCS_UNAVAILABLE` above for why availability is a signal passed in, not
+// probed from the browser). Never renders a plain link to a target that is
+// known to be unreachable -- that is the dead-link failure mode this
+// component exists to rule out.
+function ExternalDocLink({
+  href,
+  unavailable,
+  className,
+  unavailableTitle,
+  children,
+}: {
+  href: string;
+  unavailable: boolean;
+  className?: string;
+  unavailableTitle: string;
+  children: ReactNode;
+}) {
+  if (unavailable) {
+    return (
+      <span
+        className={["link-unavailable", className].filter(Boolean).join(" ")}
+        title={unavailableTitle}
+        aria-disabled="true"
+      >
+        {children}
+        <em className="unavailable-badge">演示未启动</em>
+      </span>
+    );
+  }
+  return (
+    <a className={className} href={href} target="_blank" rel="noreferrer">
+      {children}
+    </a>
+  );
 }
 
 export function Console() {
@@ -116,6 +189,11 @@ export function Console() {
     useState<ConfigSnapshot | null>(null);
   const [runtime, setRuntime] = useState<RuntimeSummary | null>(null);
   const [error, setError] = useState("");
+  // Set by the demo landing page's "看证据" button so the 运行 page opens
+  // straight on that Run's 证据 tab instead of the reader having to paste a
+  // Run ID -- the two pages share one detail panel rather than the demo page
+  // growing its own copy of evidence rendering.
+  const [pendingRunSelection, setPendingRunSelection] = useState<string | null>(null);
 
   async function refreshRuntime() {
     setRuntime(await runtimeSummary());
@@ -167,6 +245,9 @@ export function Console() {
     go("overview");
   }
 
+  // 看证据 opens a page of its own. It used to hand the Run to the 运行
+  // dashboard, which answers an operator's question, not an auditor's -- the
+  // evidence ended up under four screens of capacity metrics and a work queue.
   if (error) {
     return (
       <main className="console-error">
@@ -186,31 +267,62 @@ export function Console() {
           <Boxes size={19} />
           <div className="console-brand-copy">
             <strong>Gaia</strong>
-            <small>Dev Console</small>
+            <small>{DEMO_MODE ? "Control Center" : "Dev Console"}</small>
           </div>
         </div>
-        {navigation.map(([id, label, Icon]) => (
-          <button
-            key={id}
-            className={page === id ? "selected" : ""}
-            onClick={() => go(id)}
-          >
-            <Icon size={16} />
-            {label}
-          </button>
+        {DEMO_MODE ? (
+          SHOWCASE_UNAVAILABLE ? (
+            <span className="sidebar-business-link link-unavailable" aria-disabled="true">
+              <BriefcaseBusiness size={16} />
+              <span><strong>北辰 HR 工作台</strong><small>本次演示未启动</small></span>
+            </span>
+          ) : (
+            <a className="sidebar-business-link" href={SHOWCASE_URL}>
+              <BriefcaseBusiness size={16} />
+              <span><strong>北辰 HR 工作台</strong><small>返回业务体验</small></span>
+              <ArrowRight size={14} />
+            </a>
+          )
+        ) : null}
+        <div className="sidebar-navigation">
+          {navigation.map((group) => (
+            <nav className="sidebar-nav-group" aria-label={group.label} key={group.label}>
+              <p>{group.label}</p>
+              {group.items.map(([id, label, Icon]) => (
+                <button
+                  key={id}
+                  className={page === id ? "selected" : ""}
+                  onClick={() => go(id)}
+                >
+                  <Icon size={16} />
+                  {label}
+                </button>
+              ))}
+            </nav>
           ))}
+        </div>
         <div className="sidebar-guide">
-          <button
-            className={page === "quickstart" ? "selected" : ""}
-            onClick={() => go("quickstart")}
+          {/* 快速开始 scaffolds a project into GAIA_PROJECT_ROOT. During a demo
+              that is the Gaia repository itself, so the entry is not offered to
+              an audience -- an action nobody should take here should not be one
+              click away. Unchanged under `gaia dev` / `make dev-console`. */}
+          {DEMO_MODE ? null : (
+            <button
+              className={page === "quickstart" ? "selected" : ""}
+              onClick={() => go("quickstart")}
+            >
+              <BookOpen size={16} />
+              快速开始
+            </button>
+          )}
+          <ExternalDocLink
+            href={DEVELOPER_DOCS_URL}
+            unavailable={DOCS_UNAVAILABLE}
+            unavailableTitle="本次演示未启动文档服务"
           >
-            <BookOpen size={16} />
-            快速开始
-          </button>
-          <a href={DEVELOPER_DOCS_URL} target="_blank" rel="noreferrer">
             <ExternalLink size={16} />
             Gaia 文档
-          </a>
+          </ExternalDocLink>
         </div>
       </aside>
       <section className="console-main">
@@ -220,7 +332,7 @@ export function Console() {
             <span>{String(info.application_version ?? "")}</span>
           </div>
           <div>
-            <span className="dev-badge">开发工具</span>
+            <span className="dev-badge">{DEMO_MODE ? "演示控制面" : "开发工具"}</span>
             <span className="profile">{String(info.profile ?? "default")}</span>
             <span className="health">
               <CheckCircle2 size={14} /> {String(info.state ?? "UP")}
@@ -237,6 +349,10 @@ export function Console() {
           refreshRuntime={refreshRuntime}
           refreshAll={refreshAll}
           finishQuickStart={finishQuickStart}
+          pendingRunSelection={pendingRunSelection}
+          onPendingRunSelectionHandled={() => setPendingRunSelection(null)}
+          onBackToDemo={() => go("demo")}
+          onNavigate={go}
         />
       </section>
     </div>
@@ -253,6 +369,10 @@ interface ConsolePageProps {
   refreshRuntime: () => Promise<void>;
   refreshAll: () => Promise<void>;
   finishQuickStart: () => void;
+  pendingRunSelection: string | null;
+  onPendingRunSelectionHandled: () => void;
+  onBackToDemo: () => void;
+  onNavigate: (page: string) => void;
 }
 
 function ConsolePage({
@@ -265,9 +385,16 @@ function ConsolePage({
   refreshRuntime,
   refreshAll,
   finishQuickStart,
+  pendingRunSelection,
+  onPendingRunSelectionHandled,
+  onBackToDemo,
+  onNavigate,
 }: ConsolePageProps) {
   if (page === "quickstart") {
     return <QuickStartConsole finish={finishQuickStart} />;
+  }
+  if (page === "demo") {
+    return <DemoTour />;
   }
   if (page === "components") {
     return (
@@ -291,7 +418,26 @@ function ConsolePage({
     );
   }
   if (page === "runs") {
-    return <RunConsole summary={runtime} refreshSummary={refreshRuntime} />;
+    return (
+      <RunConsole
+        summary={runtime}
+        refreshSummary={refreshRuntime}
+        autoSelectRunId={pendingRunSelection}
+        onAutoSelectHandled={onPendingRunSelectionHandled}
+      />
+    );
+  }
+  if (page === "observability") {
+    return (
+      <ObservabilityView
+        runtime={runtime}
+        observabilityConfig={record(configSnapshot.config.observability)}
+        components={components}
+        health={health}
+        refresh={refreshAll}
+        onNavigate={onNavigate}
+      />
+    );
   }
   if (page === "prompts") {
     return (
@@ -628,15 +774,15 @@ function PromptProviderSelection() {
             </tr>
           </tbody>
         </table>
-        <a
+        <ExternalDocLink
           className="secondary-button prompt-doc-link"
           href={`${DEVELOPER_DOCS_URL}mechanisms/`}
-          target="_blank"
-          rel="noreferrer"
+          unavailable={DOCS_UNAVAILABLE}
+          unavailableTitle="本次演示未启动文档服务"
         >
           查看开发者文档
           <ExternalLink size={15} />
-        </a>
+        </ExternalDocLink>
       </div>
     </section>
   );
@@ -880,7 +1026,7 @@ interface ComponentView {
 
 function QuickStartConsole({ finish }: { finish: () => void }) {
   const [projectInit, setProjectInit] = useState<ProjectInitSnapshot | null>(null);
-  const [templateId, setTemplateId] = useState("basic");
+  const [templateId, setTemplateId] = useState("knowledge");
   const [selectedComponents, setSelectedComponents] = useState<string[]>([]);
   const [initError, setInitError] = useState("");
   const [initBusy, setInitBusy] = useState(false);
@@ -889,7 +1035,11 @@ function QuickStartConsole({ finish }: { finish: () => void }) {
     inspectProjectInit()
       .then((snapshot) => {
         setProjectInit(snapshot);
-        setTemplateId(snapshot.template_id);
+        setTemplateId(
+          snapshot.templates.some((template) => template.id === snapshot.template_id)
+            ? snapshot.template_id
+            : snapshot.templates[0]?.id ?? "knowledge",
+        );
         setSelectedComponents(
           snapshot.components
             .filter((component) => snapshot.starters.includes(component.starter))
@@ -958,15 +1108,15 @@ function QuickStartConsole({ finish }: { finish: () => void }) {
           </p>
         </div>
         <div className="quickstart-heading-actions">
-          <a
+          <ExternalDocLink
             className="secondary-button"
             href={DEVELOPER_DOCS_URL}
-            target="_blank"
-            rel="noreferrer"
+            unavailable={DOCS_UNAVAILABLE}
+            unavailableTitle="本次演示未启动文档服务"
           >
             Gaia 文档
             <ExternalLink size={15} />
-          </a>
+          </ExternalDocLink>
           <button className="secondary-button" onClick={finish}>
             跳过引导
             <ArrowRight size={15} />
@@ -977,8 +1127,8 @@ function QuickStartConsole({ finish }: { finish: () => void }) {
         <section className="project-init">
           <div className="section-heading">
             <div>
-              <h2>你想先做哪一类 AI 应用？</h2>
-              <p>选择最接近的目标，Gaia 会生成对应代码并推荐所需组件。</p>
+              <h2>你想先解决哪一类业务问题？</h2>
+              <p>从一条完整业务链开始，Gaia 会生成对应代码并推荐所需组件。</p>
             </div>
           </div>
           <div className="template-options">
@@ -999,24 +1149,50 @@ function QuickStartConsole({ finish }: { finish: () => void }) {
                   <span>
                     <strong>{template.name}</strong>
                     <small>{template.description}</small>
+                    </span>
+                  </label>
+              </div>
+            ))}
+          </div>
+          <section className="quickstart-showcase">
+            <div className="section-heading">
+              <div>
+                <h2>先看三个参考应用</h2>
+                <p>它们展示模型、企业知识、业务系统与人工确认如何组合，不会成为生成项目的一部分。</p>
+              </div>
+            </div>
+            <div className="showcase-example-grid">
+              {SHOWCASE_EXAMPLES.map((example) =>
+                SHOWCASE_UNAVAILABLE ? (
+                  <span
+                    className="showcase-example-unavailable"
+                    key={example.path}
+                    title="本次演示未启动 Showcase 服务"
+                    aria-disabled="true"
+                  >
+                    <span>
+                      <strong>{example.name}</strong>
+                      <small>{example.description}</small>
+                    </span>
+                    <em className="unavailable-badge">演示未启动</em>
                   </span>
-                </label>
-                {template.example && (
+                ) : (
                   <a
-                    href={new URL(template.example.path, SHOWCASE_URL).toString()}
+                    href={new URL(example.path, SHOWCASE_URL).toString()}
+                    key={example.path}
                     target="_blank"
                     rel="noreferrer"
                   >
                     <span>
-                      <small>参考示例</small>
-                      <strong>{template.example.name}</strong>
+                      <strong>{example.name}</strong>
+                      <small>{example.description}</small>
                     </span>
-                    <ExternalLink size={14} />
+                    <ExternalLink size={15} />
                   </a>
-                )}
-              </div>
-            ))}
-          </div>
+                ),
+              )}
+            </div>
+          </section>
           <div className="quickstart-safety">
             <div className="section-heading">
               <div>
@@ -1519,94 +1695,6 @@ function record(value: unknown): State {
     : {};
 }
 
-function OperationsOverview({ summary }: { summary: RuntimeSummary }) {
-  return (
-    <>
-      <div className="summary-grid">
-        <Metric label="成功率" value={formatRate(summary.success_rate)} />
-        <Metric label="失败率" value={formatRate(summary.failure_rate)} />
-        <Metric label="耗时 p95" value={formatDuration(summary.run_duration.p95_ms)} />
-        <Metric label="待人工确认" value={String(summary.pending_human_gates)} />
-      </div>
-      <h2>等待与容量</h2>
-      <table>
-        <tbody>
-          <tr>
-            <th>活跃 Run</th>
-            <td>{summary.active_runs}</td>
-            <th>停滞 Run</th>
-            <td>{summary.stale_runs}</td>
-          </tr>
-          <tr>
-            <th>最久人工等待</th>
-            <td>{formatAge(summary.oldest_pending_gate_age_seconds)}</td>
-            <th>人工等待 p95</th>
-            <td>{formatDuration(summary.human_gate_wait.p95_ms)}</td>
-          </tr>
-          <tr>
-            <th>数据库连接</th>
-            <td>
-              {summary.database.checked_out ?? "-"} /{" "}
-              {summary.database.pool_size ?? "-"}
-            </td>
-            <th>数据库等待 / 锁等待</th>
-            <td>
-              {summary.database.waiting_connections ?? "-"} /{" "}
-              {summary.database.lock_waiting_connections ?? "-"}
-            </td>
-          </tr>
-          <tr>
-            <th>Outbox 待发送</th>
-            <td>{summary.outbox.pending}</td>
-            <th>重试 / 死信</th>
-            <td>
-              {summary.outbox.retrying} / {summary.outbox.dead_letter}
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </>
-  );
-}
-
-function IssueTable({ issues }: { issues: RuntimeSummary["issues"] }) {
-  return (
-    <>
-      <h2>需要处理</h2>
-      <table>
-        <thead>
-          <tr>
-            <th>Run</th>
-            <th>场景</th>
-            <th>状态</th>
-            <th>瓶颈</th>
-            <th>持续时间</th>
-            <th>错误码</th>
-          </tr>
-        </thead>
-        <tbody>
-          {issues.length ? (
-            issues.map((issue) => (
-              <tr key={issue.run_id}>
-                <td>{issue.run_id}</td>
-                <td>{issue.scenario_id}</td>
-                <td>{issue.status}</td>
-                <td>{bottleneckLabel(issue.bottleneck)}</td>
-                <td>{formatAge(issue.age_seconds)}</td>
-                <td>{issue.error_code ?? "-"}</td>
-              </tr>
-            ))
-          ) : (
-            <tr>
-              <td colSpan={6}>当前窗口内没有待处理 Run</td>
-            </tr>
-          )}
-        </tbody>
-      </table>
-    </>
-  );
-}
-
 function ConfigurationConsole({
   snapshot,
   info,
@@ -1635,348 +1723,6 @@ function ConfigurationConsole({
       />
     </section>
   );
-}
-
-function RunConsole({
-  summary,
-  refreshSummary,
-}: {
-  summary: RuntimeSummary;
-  refreshSummary: () => Promise<void>;
-}) {
-  const [runId, setRunId] = useState("");
-  const [gateId, setGateId] = useState("");
-  const [result, setResult] = useState<State | null>(null);
-  const [events, setEvents] = useState<State[]>([]);
-  const [gate, setGate] = useState<State | null>(null);
-  const [modelObservability, setModelObservability] =
-    useState<RunModelObservability | null>(null);
-  const [guardrailObservability, setGuardrailObservability] =
-    useState<RunGuardrailObservability | null>(null);
-  const [detailTab, setDetailTab] = useState<RunDetailTab>("result");
-  const [notice, setNotice] = useState("");
-
-  async function inspect() {
-    try {
-      const [run, runEvents, observations, guardrails] = await Promise.all([
-        getRun(runId),
-        getEvents(runId),
-        getModelInvocations(runId),
-        getGuardrailDecisions(runId),
-      ]);
-      setResult(run as unknown as State);
-      setEvents(runEvents as unknown as State[]);
-      setModelObservability(observations);
-      setGuardrailObservability(guardrails);
-      setDetailTab("result");
-      setNotice("");
-    } catch (cause) {
-      setNotice(message(cause));
-    }
-  }
-
-  async function inspectGate() {
-    try {
-      setGate((await getGate(gateId)) as unknown as State);
-      setNotice("");
-    } catch (cause) {
-      setNotice(message(cause));
-    }
-  }
-
-  async function decide(decision: "approved" | "rejected") {
-    try {
-      setResult((await decideGate(gateId, decision)) as unknown as State);
-      await Promise.all([inspectGate(), refreshSummary()]);
-    } catch (cause) {
-      setNotice(message(cause));
-    }
-  }
-
-  return (
-    <section className="console-page">
-      <div className="page-title">
-        <h1>运行</h1>
-        <button className="primary-button" onClick={refreshSummary}>
-          <RefreshCw size={15} />
-          刷新
-        </button>
-      </div>
-      <OperationsOverview summary={summary} />
-      <IssueTable issues={summary.issues} />
-      {notice && (
-        <p className="console-notice" role="alert">
-          {notice}
-        </p>
-      )}
-      <div className="governance-grid governance-inspector">
-        <section>
-          <h2>按 Run ID 查询</h2>
-          <div className="input-action">
-            <input
-              aria-label="Run ID"
-              value={runId}
-              onChange={(event) => setRunId(event.target.value)}
-              placeholder="Run ID"
-            />
-            <button onClick={inspect} disabled={!runId}>
-              查询
-            </button>
-          </div>
-          {result && modelObservability && guardrailObservability ? (
-            <RunDetail
-              result={result}
-              events={events}
-              modelObservability={modelObservability}
-              guardrailObservability={guardrailObservability}
-              tab={detailTab}
-              onTabChange={setDetailTab}
-            />
-          ) : null}
-        </section>
-        <section>
-          <h2>按审批 ID 查询</h2>
-          <div className="input-action">
-            <input
-              aria-label="Gate ID"
-              value={gateId}
-              onChange={(event) => setGateId(event.target.value)}
-              placeholder="Gate ID"
-            />
-            <button onClick={inspectGate} disabled={!gateId}>
-              查询
-            </button>
-          </div>
-          {gate && (
-            <div className="inspection-result">
-              <h3>审批详情</h3>
-              <StructuredView value={gate} />
-            </div>
-          )}
-          <div className="action-row">
-            <button onClick={() => decide("approved")} disabled={!gateId}>
-              批准
-            </button>
-            <button
-              className="danger-button"
-              onClick={() => decide("rejected")}
-              disabled={!gateId}
-            >
-              拒绝
-            </button>
-          </div>
-        </section>
-      </div>
-    </section>
-  );
-}
-
-type RunDetailTab = "result" | "model" | "guardrails" | "events";
-
-function RunDetail({
-  result,
-  events,
-  modelObservability,
-  guardrailObservability,
-  tab,
-  onTabChange,
-}: {
-  result: State;
-  events: State[];
-  modelObservability: RunModelObservability;
-  guardrailObservability: RunGuardrailObservability;
-  tab: RunDetailTab;
-  onTabChange: (tab: RunDetailTab) => void;
-}) {
-  const tabs: Array<[RunDetailTab, string]> = [
-    ["result", "运行结果"],
-    ["model", "模型调用"],
-    ["guardrails", "安全决策"],
-    ["events", "事件链"],
-  ];
-  return (
-    <div className="run-detail">
-      <div className="workspace-tabs" role="tablist" aria-label="运行详情">
-        {tabs.map(([id, label]) => (
-          <button
-            key={id}
-            role="tab"
-            aria-selected={tab === id}
-            className={tab === id ? "selected" : ""}
-            onClick={() => onTabChange(id)}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
-      {tab === "result" ? (
-        <div className="inspection-result">
-          <StructuredView value={result} />
-        </div>
-      ) : null}
-      {tab === "model" ? (
-        <ModelObservationPanel value={modelObservability} />
-      ) : null}
-      {tab === "guardrails" ? (
-        <GuardrailObservationPanel value={guardrailObservability} />
-      ) : null}
-      {tab === "events" ? (
-        <div className="event-list">
-          {events.map((event) => (
-            <div key={String(event.sequence ?? event.event_id)}>
-              <span className="event-sequence">
-                {String(event.sequence ?? "-")}
-              </span>
-              <div>
-                <strong>{String(event.step ?? "event")}</strong>
-                <span>
-                  {displayValue(event.status)} · {String(event.actor ?? "-")}
-                </span>
-              </div>
-              <time>{displayValue(event.timestamp)}</time>
-            </div>
-          ))}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function ModelObservationPanel({ value }: { value: RunModelObservability }) {
-  return (
-    <div className="model-observation">
-      <div className="section-heading">
-        <div>
-          <h3>模型调用</h3>
-          <p>仅展示工程指标和版本关联，不保存 Prompt 与响应正文。</p>
-        </div>
-      </div>
-      <div className="summary-grid compact-summary">
-        <Metric label="调用" value={String(value.summary.total)} />
-        <Metric label="Token" value={String(value.summary.total_tokens)} />
-        <Metric
-          label="P95 耗时"
-          value={
-            value.summary.duration.p95_ms === null
-              ? "-"
-              : `${value.summary.duration.p95_ms} ms`
-          }
-        />
-        <Metric label="重试" value={String(value.summary.retry_count)} />
-      </div>
-      {value.invocations.length ? (
-        <table>
-          <thead>
-            <tr>
-              <th>模型</th>
-              <th>Prompt 版本</th>
-              <th>状态</th>
-              <th>Token</th>
-              <th>耗时</th>
-            </tr>
-          </thead>
-          <tbody>
-            {value.invocations.map((item) => (
-              <tr key={item.invocation_id}>
-                <td>
-                  <strong>{item.model_id}</strong>
-                  <span className="table-secondary">{item.provider}</span>
-                </td>
-                <td>{item.prompt_version}</td>
-                <td>{displayValue(item.status)}</td>
-                <td>{item.usage?.total_tokens ?? "-"}</td>
-                <td>{item.duration_ms} ms</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      ) : (
-        <p className="empty-copy">这个 Run 没有模型调用。</p>
-      )}
-    </div>
-  );
-}
-
-function GuardrailObservationPanel({
-  value,
-}: {
-  value: RunGuardrailObservability;
-}) {
-  return (
-    <div className="model-observation">
-      <div className="section-heading">
-        <div>
-          <h3>安全决策</h3>
-          <p>展示检查结果和规则版本，不保存被检查的业务正文。</p>
-        </div>
-      </div>
-      <div className="summary-grid compact-summary">
-        <Metric label="检查" value={String(value.summary.total)} />
-        <Metric label="改写" value={String(value.summary.rewritten)} />
-        <Metric label="阻断" value={String(value.summary.blocked)} />
-        <Metric label="组件异常" value={String(value.summary.errors)} />
-      </div>
-      {value.decisions.length ? (
-        <table>
-          <thead>
-            <tr>
-              <th>检查位置</th>
-              <th>规则</th>
-              <th>结果</th>
-              <th>风险</th>
-              <th>原因</th>
-              <th>耗时</th>
-            </tr>
-          </thead>
-          <tbody>
-            {value.decisions.map((item) => (
-              <tr key={item.decision_id}>
-                <td>{guardrailStageLabel(item.stage)}</td>
-                <td>
-                  <strong>{item.guardrail_id}</strong>
-                  <span className="table-secondary">
-                    v{item.guardrail_version}
-                  </span>
-                </td>
-                <td>{guardrailActionLabel(item.action, item.status)}</td>
-                <td>
-                  {item.risk_score === null
-                    ? "-"
-                    : `${Math.round(item.risk_score * 100)}%`}
-                </td>
-                <td>{item.code ?? "-"}</td>
-                <td>{item.duration_ms} ms</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      ) : (
-        <p className="empty-copy">这个 Run 没有执行安全检查。</p>
-      )}
-    </div>
-  );
-}
-
-function guardrailStageLabel(stage: GuardrailDecision["stage"]): string {
-  return {
-    input: "模型输入",
-    retrieval: "知识检索",
-    output: "模型输出",
-    tool_input: "操作参数",
-    tool_output: "操作结果",
-  }[stage];
-}
-
-function guardrailActionLabel(
-  action: GuardrailDecision["action"],
-  status: GuardrailDecision["status"],
-): string {
-  if (status === "error") return "检查异常";
-  return {
-    allow: "放行",
-    rewrite: "已改写",
-    block: "已阻断",
-  }[action];
 }
 
 function ReplayConsole() {
@@ -2072,40 +1818,10 @@ function ReplayResult({ value }: { value: State }) {
   );
 }
 
-function Metric({ label, value }: { label: string; value: string }) {
-  return (
-    <dl>
-      <dt>{label}</dt>
-      <dd>{value}</dd>
-    </dl>
-  );
-}
-
 function formatRate(value: number) {
   return `${(value * 100).toFixed(1)}%`;
 }
 
 function shortHash(value: string) {
   return value.length > 12 ? value.slice(0, 12) : value;
-}
-
-function formatDuration(value: number | null) {
-  if (value === null) return "-";
-  if (value < 1000) return `${value} ms`;
-  return `${(value / 1000).toFixed(1)} s`;
-}
-
-function formatAge(value: number | null) {
-  if (value === null) return "-";
-  if (value < 60) return `${value} 秒`;
-  if (value < 3600) return `${Math.floor(value / 60)} 分钟`;
-  return `${Math.floor(value / 3600)} 小时`;
-}
-
-function bottleneckLabel(value: string) {
-  return {
-    human_gate: "人工等待",
-    stale_execution: "执行停滞",
-    run_error: "运行错误",
-  }[value] ?? value;
 }

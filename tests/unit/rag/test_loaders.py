@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 
 from gaia.rag import LocalFileDocumentLoader
-from gaia.sdk.rag import DocumentAccess, DocumentSource
+from gaia.spi.rag import DocumentAccess, DocumentSource
 
 
 def source(uri: str) -> DocumentSource:

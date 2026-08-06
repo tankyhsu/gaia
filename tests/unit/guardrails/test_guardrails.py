@@ -17,14 +17,14 @@ from gaia.guardrails import (
 )
 from gaia.observability import InstrumentedModelProvider
 from gaia.observability.models import ModelInvocation
-from gaia.sdk.guardrail import (
+from gaia.spi.guardrail import (
     GuardrailAction,
     GuardrailContext,
     GuardrailFailureMode,
     GuardrailResult,
     GuardrailStage,
 )
-from gaia.sdk.model import (
+from gaia.spi.model import (
     ModelCallContext,
     ModelMessage,
     ModelResult,
@@ -74,6 +74,49 @@ class RecordingProvider:
         del messages, timeout_seconds, context
         for delta in ("safe ", self.output):
             yield ModelStreamChunk(delta=delta, model_id=profile.model_id)
+
+
+class SequenceProvider(RecordingProvider):
+    def __init__(self, outputs: list[dict[str, object]]) -> None:
+        super().__init__()
+        self.outputs = outputs
+        self.calls: list[list[ModelMessage]] = []
+
+    async def generate_structured(
+        self,
+        *,
+        profile: ModelEndpointProfile,
+        messages: list[ModelMessage],
+        output_schema: type[BaseModel],
+        timeout_seconds: int,
+        context: ModelCallContext | None = None,
+    ) -> ModelResult:
+        del output_schema, timeout_seconds, context
+        self.calls.append(messages)
+        return ModelResult(
+            output=self.outputs[len(self.calls) - 1],
+            model_id=profile.model_id,
+        )
+
+
+class CorrectableOutputGuardrail:
+    guardrail_id = "structured-business-output"
+    guardrail_version = "1.0.0"
+
+    async def evaluate(
+        self,
+        content: str,
+        context: GuardrailContext,
+    ) -> GuardrailResult:
+        del context
+        if "retry-me" in content:
+            return GuardrailResult(
+                action=GuardrailAction.BLOCK,
+                code="STRUCTURED_VALUE_INVALID",
+                reason="a correctable structured field is invalid",
+                correctable=True,
+            )
+        return GuardrailResult(action=GuardrailAction.ALLOW)
 
 
 class RecordingDecisionSink:
@@ -176,7 +219,7 @@ async def test_pipeline_blocks_output_with_stable_payload_free_error() -> None:
     assert "forbidden" not in str(captured.value)
 
 
-async def test_streaming_output_is_checked_before_each_delta_is_emitted() -> None:
+async def test_streaming_output_is_buffered_before_any_delta_is_emitted() -> None:
     guardrail = PatternGuardrail(
         "stream-policy",
         (PatternRule(pattern="blocked", code="STREAM_BLOCKED"),),
@@ -191,10 +234,55 @@ async def test_streaming_output_is_checked_before_each_delta_is_emitted() -> Non
         timeout_seconds=1,
     )
 
-    first = await anext(stream)
-    assert first.delta == "safe "
     with pytest.raises(GuardrailViolation, match="STREAM_BLOCKED"):
         await anext(stream)
+
+
+async def test_streaming_output_guardrail_evaluates_full_text_once() -> None:
+    calls: list[str] = []
+
+    class CountingGuardrail:
+        guardrail_id = "counting"
+        guardrail_version = "1.0.0"
+
+        async def evaluate(
+            self,
+            content: str,
+            context: GuardrailContext,
+        ) -> GuardrailResult:
+            del context
+            calls.append(content)
+            return GuardrailResult(action=GuardrailAction.ALLOW)
+
+    guarded = GuardedModelProvider(
+        RecordingProvider("response"),
+        output_guardrails=GuardrailPipeline((CountingGuardrail(),)),
+    )
+
+    chunks = [
+        chunk
+        async for chunk in guarded.generate_stream(
+            profile=profile(),
+            messages=[],
+            timeout_seconds=1,
+        )
+    ]
+
+    assert calls == ["safe response"]
+    assert "".join(chunk.delta for chunk in chunks) == "safe response"
+
+
+async def test_streaming_without_output_guardrails_remains_passthrough() -> None:
+    guarded = GuardedModelProvider(RecordingProvider("response"))
+    stream = guarded.generate_stream(
+        profile=profile(),
+        messages=[],
+        timeout_seconds=1,
+    )
+
+    first = await anext(stream)
+
+    assert first.delta == "safe "
 
 
 async def test_pattern_guardrail_reports_allow_when_no_rule_matches() -> None:
@@ -301,10 +389,10 @@ def test_guardrail_contract_covers_the_five_runtime_stages() -> None:
     }
 
 
-async def test_outer_instrumentation_records_guardrail_block() -> None:
+async def test_output_guardrail_preserves_the_completed_model_invocation() -> None:
     invocation_sink = RecordingInvocationSink()
-    guarded = GuardedModelProvider(
-        RecordingProvider("forbidden"),
+    provider = GuardedModelProvider(
+        InstrumentedModelProvider(RecordingProvider("forbidden"), invocation_sink),
         output_guardrails=GuardrailPipeline(
             (
                 PatternGuardrail(
@@ -314,7 +402,6 @@ async def test_outer_instrumentation_records_guardrail_block() -> None:
             )
         ),
     )
-    provider = InstrumentedModelProvider(guarded, invocation_sink)
 
     with pytest.raises(GuardrailViolation):
         await provider.generate_structured(
@@ -325,5 +412,122 @@ async def test_outer_instrumentation_records_guardrail_block() -> None:
         )
 
     assert len(invocation_sink.invocations) == 1
-    assert invocation_sink.invocations[0].status.value == "failed"
-    assert invocation_sink.invocations[0].error_code == "OUTPUT_BLOCKED"
+    assert invocation_sink.invocations[0].status.value == "succeeded"
+    assert invocation_sink.invocations[0].error_code is None
+
+
+async def test_input_guardrail_blocks_before_a_model_invocation_is_created() -> None:
+    invocation_sink = RecordingInvocationSink()
+    provider = GuardedModelProvider(
+        InstrumentedModelProvider(RecordingProvider(), invocation_sink),
+        input_guardrails=GuardrailPipeline(
+            (
+                PatternGuardrail(
+                    "input-policy",
+                    (PatternRule(pattern="forbidden", code="INPUT_BLOCKED"),),
+                ),
+            )
+        ),
+    )
+
+    with pytest.raises(GuardrailViolation):
+        await provider.generate_structured(
+            profile=profile(),
+            messages=[ModelMessage(role="user", content="forbidden")],
+            output_schema=Answer,
+            timeout_seconds=1,
+        )
+
+    assert invocation_sink.invocations == []
+
+
+async def test_structured_output_schema_can_be_corrected_once() -> None:
+    provider = SequenceProvider([{}, {"answer": "corrected"}])
+    guarded = GuardedModelProvider(provider, output_correction_attempts=1)
+
+    result = await guarded.generate_structured(
+        profile=profile(),
+        messages=[ModelMessage(role="user", content="answer")],
+        output_schema=Answer,
+        timeout_seconds=1,
+    )
+
+    assert result.output == {"answer": "corrected"}
+    assert len(provider.calls) == 2
+    correction = provider.calls[1][-1].content
+    assert "structured-output error" in correction
+    assert "{}" not in correction
+
+
+async def test_correctable_guardrail_can_reask_without_exposing_blocked_output() -> None:
+    provider = SequenceProvider(
+        [
+            {"answer": "retry-me"},
+            {"answer": "safe"},
+        ]
+    )
+    guarded = GuardedModelProvider(
+        provider,
+        output_guardrails=GuardrailPipeline((CorrectableOutputGuardrail(),)),
+        output_correction_attempts=1,
+    )
+
+    result = await guarded.generate_structured(
+        profile=profile(),
+        messages=[],
+        output_schema=Answer,
+        timeout_seconds=1,
+    )
+
+    assert result.output == {"answer": "safe"}
+    assert len(provider.calls) == 2
+    assert "retry-me" not in provider.calls[1][-1].content
+
+
+async def test_schema_correction_exhaustion_has_stable_error() -> None:
+    provider = SequenceProvider([{}, {}])
+    guarded = GuardedModelProvider(provider, output_correction_attempts=1)
+
+    with pytest.raises(GuardrailViolation) as captured:
+        await guarded.generate_structured(
+            profile=profile(),
+            messages=[],
+            output_schema=Answer,
+            timeout_seconds=1,
+        )
+
+    assert captured.value.code == "MODEL_OUTPUT_INVALID"
+    assert captured.value.correctable is True
+    assert len(provider.calls) == 2
+
+
+async def test_safety_block_is_never_reasked() -> None:
+    provider = SequenceProvider(
+        [
+            {"answer": "forbidden"},
+            {"answer": "should-not-run"},
+        ]
+    )
+    guarded = GuardedModelProvider(
+        provider,
+        output_guardrails=GuardrailPipeline(
+            (
+                PatternGuardrail(
+                    "safety-policy",
+                    (PatternRule(pattern="forbidden", code="OUTPUT_BLOCKED"),),
+                ),
+            )
+        ),
+        output_correction_attempts=3,
+    )
+
+    with pytest.raises(GuardrailViolation) as captured:
+        await guarded.generate_structured(
+            profile=profile(),
+            messages=[],
+            output_schema=Answer,
+            timeout_seconds=1,
+        )
+
+    assert captured.value.code == "OUTPUT_BLOCKED"
+    assert len(provider.calls) == 1

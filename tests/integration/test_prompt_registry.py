@@ -8,7 +8,7 @@ from gaia.integrations.prompt_postgres import (
     PromptRegistryConflict,
 )
 from gaia.persistence.database import initialize_database
-from gaia.sdk.prompt import (
+from gaia.spi.prompt import (
     PromptArtifact,
     PromptLifecycleStatus,
     PromptRef,

@@ -50,7 +50,7 @@ def test_actuator_exposes_application_and_protects_details(tmp_path: Path) -> No
     assert conditions.json()
     assert runtime.status_code == 200
     assert runtime.json()["total_runs"] == 0
-    assert runtime.json()["database"]["backend"] == "sqlite"
+    assert runtime.json()["database"]["backend"] == "unconfigured"
 
 
 def test_framework_api_can_start_without_application_runtime(tmp_path: Path) -> None:

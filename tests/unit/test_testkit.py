@@ -17,6 +17,7 @@ from gaia.testing import (
     TestCase,
     TestDataset,
     TestObservation,
+    VersionBundleGate,
     load_dataset,
 )
 
@@ -316,3 +317,58 @@ async def test_pass_rate_gate_does_not_hide_missing_or_critical_failures() -> No
     assert result.passed is False
     assert result.reasons == ("missing_measurements", "critical_cases_failed")
     assert result.details["missing_case_ids"] == ["missing"]
+
+
+def _version_bundle_context(subject: dict[str, str]) -> GateContext:
+    test_dataset = TestDataset(
+        dataset_id="golden",
+        version="1",
+        cases=(TestCase(case_id="a", input={}),),
+    )
+    return GateContext(dataset=test_dataset, subject=subject, observations=(), results=())
+
+
+def test_version_bundle_gate_rejects_unknown_field_at_construction() -> None:
+    with pytest.raises(ValueError, match="unknown VersionBundle field"):
+        VersionBundleGate(expected={"not_a_real_field": "1.0.0"})
+
+
+def test_version_bundle_gate_requires_non_empty_expected() -> None:
+    with pytest.raises(ValueError, match="expected must not be empty"):
+        VersionBundleGate(expected={})
+
+
+@pytest.mark.asyncio
+async def test_version_bundle_gate_passes_when_subject_matches_expected() -> None:
+    gate = VersionBundleGate(expected={"rules": "sha256:abc123", "policy": "policy-x:1.0.0"})
+
+    result = await gate.evaluate(
+        _version_bundle_context({"rules": "sha256:abc123", "policy": "policy-x:1.0.0"})
+    )
+
+    assert result.passed is True
+    assert result.reasons == ()
+
+
+@pytest.mark.asyncio
+async def test_version_bundle_gate_fails_when_a_field_differs() -> None:
+    gate = VersionBundleGate(expected={"rules": "sha256:abc123"})
+
+    result = await gate.evaluate(_version_bundle_context({"rules": "sha256:drifted"}))
+
+    assert result.passed is False
+    assert result.reasons == ("version_mismatch",)
+    assert result.details["mismatches"] == {
+        "rules": {"expected": "sha256:abc123", "actual": "sha256:drifted"}
+    }
+
+
+@pytest.mark.asyncio
+async def test_version_bundle_gate_fails_when_subject_is_missing_a_field() -> None:
+    gate = VersionBundleGate(expected={"rules": "sha256:abc123"})
+
+    result = await gate.evaluate(_version_bundle_context({}))
+
+    assert result.passed is False
+    assert result.reasons == ("version_field_missing",)
+    assert result.details["missing_fields"] == ["rules"]

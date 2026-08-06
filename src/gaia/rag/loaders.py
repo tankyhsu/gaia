@@ -6,7 +6,7 @@ import asyncio
 from pathlib import Path
 from urllib.parse import unquote, urlparse
 
-from gaia.sdk.rag import DocumentSource, LoadedDocument
+from gaia.spi.rag import DocumentSource, LoadedDocument
 
 
 class LocalFileDocumentLoader:

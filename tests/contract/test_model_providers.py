@@ -2,7 +2,7 @@ from pydantic import BaseModel
 
 from examples.controlled_task.model import DeterministicMockProvider
 from gaia.contracts.models import ModelCapabilities, ModelEndpointProfile
-from gaia.sdk.model import ModelMessage
+from gaia.spi.model import ModelMessage
 
 
 class Intent(BaseModel):

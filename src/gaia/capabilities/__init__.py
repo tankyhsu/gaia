@@ -1,4 +1,4 @@
-"""Optional Gaia behavior packs built from SDK ports and integrations."""
+"""Optional Gaia behavior packs built from SPI ports and integrations."""
 
 from gaia.capabilities.outbox import (
     OutboxClaim,

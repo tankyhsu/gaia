@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 from typing import Any
 from urllib.parse import quote
 
-from gaia.sdk.rate_limit import RateLimitDecision
+from gaia.spi.rate_limit import RateLimitDecision
 
 _RATE_LIMIT_SCRIPT = """
 local current = redis.call('INCRBY', KEYS[1], ARGV[1])

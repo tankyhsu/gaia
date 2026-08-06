@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from typing import cast
 
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from gaia.actuator import (
     ActuatorCondition,
@@ -18,10 +17,19 @@ from gaia.actuator import (
 )
 from gaia.application import ApplicationState, GaiaApplication
 from gaia.components.core import ComponentStatus
+from gaia.contracts.models import UserIdentity
 from gaia.observability import RuntimeObservabilityService
 from gaia.observability.models import RuntimeSummary
+from gaia.runtime.contracts import RuntimeEngine
 
-Authorization = Callable[[Request], JSONResponse | None]
+# Resolves the caller identity for one request: `(identity, None)` when the
+# request may proceed (`identity` is `None` for a trusted-service caller with
+# no end-user identity), or `(None, response)` with a 401 `JSONResponse` when
+# authentication failed. Actuator/devtools routes are not scoped to a single
+# end user's resources, so `identity` is accepted for symmetry with the rest
+# of the API surface (F1: no protected endpoint should discard it) but is not
+# itself consulted for an ownership decision here.
+Authorization = Callable[[Request], Awaitable[tuple[UserIdentity | None, JSONResponse | None]]]
 
 
 def create_actuator_router(
@@ -63,7 +71,8 @@ def create_actuator_router(
 
     @router.get("/components", response_model=list[dict[str, object]])
     async def components(request: Request) -> list[dict[str, object]] | JSONResponse:
-        if unauthorized := authorize(request):
+        _, unauthorized = await authorize(request)
+        if unauthorized:
             return unauthorized
         return [
             cast(dict[str, object], item.model_dump(mode="json"))
@@ -72,7 +81,8 @@ def create_actuator_router(
 
     @router.get("/config", response_model=ActuatorConfig)
     async def config(request: Request) -> ActuatorConfig | JSONResponse:
-        if unauthorized := authorize(request):
+        _, unauthorized = await authorize(request)
+        if unauthorized:
             return unauthorized
         snapshot = application(request).actuator_snapshot()
         return ActuatorConfig(
@@ -83,7 +93,8 @@ def create_actuator_router(
 
     @router.get("/conditions", response_model=list[ActuatorCondition])
     async def conditions(request: Request) -> list[ActuatorCondition] | JSONResponse:
-        if unauthorized := authorize(request):
+        _, unauthorized = await authorize(request)
+        if unauthorized:
             return unauthorized
         return list(application(request).actuator_snapshot().conditions)
 
@@ -93,13 +104,11 @@ def create_actuator_router(
         window_hours: int = Query(default=24, ge=1, le=168),
         stale_after_seconds: int = Query(default=300, ge=30, le=86400),
     ) -> RuntimeSummary | JSONResponse:
-        if unauthorized := authorize(request):
+        _, unauthorized = await authorize(request)
+        if unauthorized:
             return unauthorized
-        factory = cast(
-            async_sessionmaker[AsyncSession],
-            request.app.state.session_factory,
-        )
-        return await RuntimeObservabilityService(factory).summary(
+        active_runtime = cast(RuntimeEngine | None, request.app.state.runtime)
+        return await RuntimeObservabilityService(active_runtime).summary(
             window_hours=window_hours,
             stale_after_seconds=stale_after_seconds,
         )

@@ -26,13 +26,8 @@ class ScenarioTemplate:
 SCENARIO_TEMPLATES: dict[str, ScenarioTemplate] = {
     "basic": ScenarioTemplate(
         template_id="basic",
-        name="处理文本和文档",
-        description="适合总结、分类、信息抽取和内容生成等模型调用场景。",
-        example=ScenarioExample(
-            name="简历阅读",
-            description="从职位要求定位履历证据，并整理需要人工核实的面试问题。",
-            path="/#resume",
-        ),
+        name="最小技术骨架",
+        description="用于验证项目结构、模型调用和测试链路，不作为独立业务应用。",
     ),
     "knowledge": ScenarioTemplate(
         template_id="knowledge",
@@ -50,11 +45,15 @@ SCENARIO_TEMPLATES: dict[str, ScenarioTemplate] = {
         name="连接并操作业务系统",
         description="适合调用企业接口执行操作，并在关键步骤加入人工确认。",
         example=ScenarioExample(
-            name="请假办理",
-            description="校验休假规则，等待经理确认后再写入考勤系统。",
-            path="/#leave",
+            name="入职权限开通",
+            description="生成岗位权限草案，经规则校验和 IT 授权后再写入 IAM。",
+            path="/#onboarding",
         ),
     ),
+}
+
+BUSINESS_SCENARIO_TEMPLATES: dict[str, ScenarioTemplate] = {
+    template_id: SCENARIO_TEMPLATES[template_id] for template_id in ("knowledge", "approval")
 }
 
 

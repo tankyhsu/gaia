@@ -1,0 +1,53 @@
+{{- if .Values.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "gaia.fullname" . }}-api
+  labels:
+    {{- include "gaia.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "gaia.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: api
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "gaia.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: console
+        {{- with .Values.networkPolicy.ingressNamespaceSelector }}
+        - namespaceSelector:
+            matchLabels:
+              {{- toYaml . | nindent 14 }}
+        {{- end }}
+      ports:
+        - protocol: TCP
+          port: 8000
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "gaia.fullname" . }}-console
+  labels:
+    {{- include "gaia.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "gaia.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: console
+  policyTypes:
+    - Ingress
+  ingress:
+    - {{- if .Values.networkPolicy.ingressNamespaceSelector }}
+      from:
+        - namespaceSelector:
+            matchLabels:
+              {{- toYaml .Values.networkPolicy.ingressNamespaceSelector | nindent 14 }}
+      {{- end }}
+      ports:
+        - protocol: TCP
+          port: 8080
+{{- end }}

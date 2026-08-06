@@ -33,6 +33,7 @@ class ComponentKind(StrEnum):
     CLIENT = "client"
     PROMPT = "prompt"
     RAG = "rag"
+    RUNTIME = "runtime"
 
 
 class ComponentStatus(StrEnum):
@@ -122,6 +123,7 @@ class ComponentRegistry:
             ComponentKind.EVENT_PUBLISHER,
             ComponentKind.PROMPT,
             ComponentKind.RAG,
+            ComponentKind.RUNTIME,
         }:
             if any(item.descriptor.kind == descriptor.kind for item in self._specs.values()):
                 raise ValueError("CONFIG_COMPONENT_AMBIGUOUS")

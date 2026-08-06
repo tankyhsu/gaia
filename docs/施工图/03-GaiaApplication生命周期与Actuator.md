@@ -78,13 +78,15 @@ Context 是不可变快照：
 退出 lifespan 后组件映射被清空，防止应用继续使用已关闭的资源。配置变更不会热替换正在运行的
 Context；需要创建新进程或新应用作用域。
 
-## 6. Runtime 接入
+## 6. 执行接入
 
-`PersistentRuntimeEngine` 通过显式 `RuntimeDependencies` 接收 Runner、Tool Registry、安全环境和
-写入上限。它不得从 Starter 或 Integration 中定位全局对象。
+`TemporalRuntimeEngine` 是 API 到 Temporal 的窄适配器，通过显式
+`RuntimeDependencies` 接收 ScenarioRunner、Tool Registry、安全环境和写入上限。
+`gaia worker --config ... --app ...` 进入与 API 相同的 application lifespan，并把这些
+依赖注册成 Workflow/Activity Worker；任何一侧都不得从全局对象重新装配第二套依赖。
 
-应用自己的 checkpoint、memory、HTTP Client 等资源提供 lifespan，ASGI 根作用域在创建 Runtime
-之前进入这些资源。
+应用自己的 checkpoint、memory、HTTP Client 等资源提供 lifespan。LangGraph 只负责逻辑
+步骤，Temporal 持有执行历史、HumanGate、重试和恢复。
 
 ## 7. Actuator API
 

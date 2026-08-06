@@ -1,0 +1,42 @@
+{{- if .Values.podDisruptionBudget.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "gaia.fullname" . }}-api
+  labels:
+    {{- include "gaia.labels" . | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.podDisruptionBudget.api.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "gaia.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: api
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "gaia.fullname" . }}-worker
+  labels:
+    {{- include "gaia.labels" . | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.podDisruptionBudget.worker.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "gaia.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: worker
+{{- if .Values.console.enabled }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "gaia.fullname" . }}-console
+  labels:
+    {{- include "gaia.labels" . | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.podDisruptionBudget.console.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "gaia.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: console
+{{- end }}
+{{- end }}

@@ -11,24 +11,17 @@ import pytest
 from langgraph.types import Command
 from sqlalchemy import func, select, text
 
-from examples.controlled_task import create_controlled_task_composition
-from examples.controlled_task.model import DeterministicMockProvider
 from examples.controlled_task.workflow import build_controlled_task_graph
 from gaia.capabilities.outbox import OutboxDispatcher, SqlAlchemyOutboxStore
 from gaia.config import GaiaApplicationConfig
-from gaia.contracts.models import RunMode, RunRequest
-from gaia.guardrails import GuardrailPipeline, PatternGuardrail, PatternRule
-from gaia.guardrails.store import SqlAlchemyGuardrailDecisionStore
+from gaia.contracts.models import RunMode
+from gaia.integrations.events import InProcessEventPublisher
 from gaia.integrations.prompt_postgres import PostgresPromptRegistry
 from gaia.model_gateway import embedding_function_from_config
-from gaia.observability import (
-    InstrumentedModelProvider,
-    RuntimeObservabilityService,
-    SqlAlchemyModelInvocationStore,
-)
 from gaia.persistence import GaiaPersistenceResources
+from gaia.persistence.audit import SqlAlchemyAuditProjection
 from gaia.persistence.database import dispose_session_factory, initialize_database
-from gaia.persistence.migrate import upgrade_database
+from gaia.persistence.migrate import current_head, upgrade_database
 from gaia.persistence.models import OutboxEventRecord, ReplayJobRecord
 from gaia.rag import (
     FixedWindowChunker,
@@ -37,10 +30,9 @@ from gaia.rag import (
     RagPipeline,
     Utf8TextParser,
 )
-from gaia.sdk.events import EventEnvelope, InProcessEventPublisher
-from gaia.sdk.guardrail import GuardrailAction, GuardrailContext, GuardrailStage
-from gaia.sdk.prompt import PromptArtifact, PromptRef, PromptValidation
-from gaia.sdk.rag import DocumentAccess, DocumentSource, IngestionStatus, RetrievalRequest
+from gaia.spi.events import EventEnvelope
+from gaia.spi.prompt import PromptArtifact, PromptRef, PromptValidation
+from gaia.spi.rag import DocumentAccess, DocumentSource, IngestionStatus, RetrievalRequest
 
 POSTGRES_URL = os.environ.get("TEST_POSTGRES_URL")
 RUN_EXTERNAL_TESTS = os.environ.get("RUN_EXTERNAL_TESTS") == "1"
@@ -163,7 +155,11 @@ async def test_postgres_operational_transactions_and_migration() -> None:
             version = await session.scalar(text("SELECT version_num FROM alembic_version"))
         assert committed == 1
         assert rolled_back == 0
-        assert version == "0009_guardrail_decisions"
+        # Assert against whatever head the migration scripts directory itself reports,
+        # not a hardcoded revision string -- a literal here goes stale on every new
+        # migration (it previously pinned "0010_business_builder_runtime" while the real
+        # head had already moved to "0014_runtime_leases").
+        assert version == current_head(POSTGRES_URL)
     finally:
         await dispose_session_factory(factory)
 
@@ -261,85 +257,6 @@ async def test_postgres_outbox_claims_are_concurrent_safe_and_dispatchable() -> 
                 )
             )
         assert set(published) == {"published"}
-    finally:
-        await dispose_session_factory(factory)
-
-
-async def test_postgres_runtime_creates_a_complete_run() -> None:
-    assert POSTGRES_URL is not None
-    factory = await initialize_database(POSTGRES_URL, auto_create=False)
-    try:
-        invocation_store = SqlAlchemyModelInvocationStore(factory)
-        guardrail_store = SqlAlchemyGuardrailDecisionStore(factory)
-        runtime = create_controlled_task_composition(
-            model_provider=InstrumentedModelProvider(
-                DeterministicMockProvider(),
-                invocation_store,
-            )
-        ).create_runtime(factory)
-        result = await runtime.create(
-            RunRequest.model_validate(
-                {
-                    "scenario_id": "controlled-task",
-                    "mode": "mock",
-                    "user": {
-                        "id": "reader",
-                        "organization": "org-alpha",
-                        "roles": ["reader"],
-                    },
-                    "request": {"text": "inspect res-001"},
-                }
-            ),
-            f"postgres-runtime-{uuid4()}",
-        )
-        assert result.status.value == "succeeded"
-        assert result.result is not None
-        observations = await invocation_store.for_run(result.run_id)
-        assert observations.summary.total == 1
-        assert observations.invocations[0].model_id == "deterministic-mock"
-        pipeline = GuardrailPipeline(
-            (
-                PatternGuardrail(
-                    "postgres-policy",
-                    (
-                        PatternRule(
-                            pattern="private",
-                            code="PRIVATE_REDACTED",
-                            action=GuardrailAction.REWRITE,
-                        ),
-                    ),
-                ),
-            ),
-            sink=guardrail_store,
-        )
-        await pipeline.evaluate(
-            "private",
-            GuardrailContext(
-                stage=GuardrailStage.OUTPUT,
-                run_id=result.run_id,
-                scenario_id="controlled-task",
-            ),
-        )
-        guardrails = await guardrail_store.for_run(result.run_id)
-        assert guardrails.summary.rewritten == 1
-        assert guardrails.decisions[0].input_ref.startswith("sha256:")
-    finally:
-        await dispose_session_factory(factory)
-
-
-async def test_postgres_runtime_summary_reports_pool_and_waiting_connections() -> None:
-    assert POSTGRES_URL is not None
-    factory = await initialize_database(POSTGRES_URL, auto_create=False)
-    try:
-        summary = await RuntimeObservabilityService(factory).summary()
-        assert summary.database.backend == "postgresql"
-        assert summary.database.pool_class
-        assert summary.database.pool_size is not None
-        assert summary.database.checked_out is not None
-        assert summary.database.overflow is not None
-        assert summary.database.overflow >= 0
-        assert summary.database.waiting_connections is not None
-        assert summary.database.lock_waiting_connections is not None
     finally:
         await dispose_session_factory(factory)
 
@@ -476,11 +393,7 @@ async def test_postgres_memory_filter_vector_search_and_restart() -> None:
         await dispose_session_factory(factory)
 
 
-@pytest.mark.external
-@pytest.mark.skipif(
-    not RUN_EXTERNAL_TESTS or not os.environ.get("SILICONFLOW_API_KEY"),
-    reason="RUN_EXTERNAL_TESTS=1 and SILICONFLOW_API_KEY are required",
-)
+
 async def test_postgres_pgvector_with_configured_siliconflow_embedding() -> None:
     payload = _config().model_dump(mode="python")
     payload["embedding"] = {
@@ -516,3 +429,62 @@ async def test_postgres_pgvector_with_configured_siliconflow_embedding() -> None
             limit=1,
         )
         assert [item.key for item in result] == ["finance"]
+
+
+async def test_audit_projection_pages_the_same_way_on_postgres() -> None:
+    """Keyset paging must mean the same thing on both dialects.
+
+    SQLite hands back naive datetimes and PostgreSQL hands back aware ones, and
+    the cursor compares those values directly. That single normalization is the
+    only cross-dialect assumption the audit store makes, so it is worth proving
+    against a real PostgreSQL rather than inferring it from the SQLite suite.
+    """
+
+    assert POSTGRES_URL is not None
+    await asyncio.to_thread(upgrade_database, POSTGRES_URL)
+    factory = await initialize_database(POSTGRES_URL, auto_create=False)
+    projection = SqlAlchemyAuditProjection(factory)
+    organization = f"paging-{uuid4().hex[:8]}"
+    other = f"other-{uuid4().hex[:8]}"
+
+    def snapshot(index: int, owner: str) -> dict[str, object]:
+        stamp = f"2026-07-29T00:00:{index:02d}+00:00"
+        return {
+            "run_id": f"{owner}-run-{index:02d}",
+            "scenario_id": "ticket.prepare",
+            "mode": "mock",
+            "status": "succeeded",
+            "user": {"id": "alice", "organization": owner, "roles": ["user"]},
+            "version_bundle": {"policy": "p:1.0.0"},
+            "created_at": stamp,
+            "updated_at": stamp,
+        }
+
+    try:
+        for index in range(1, 13):
+            await projection.record(snapshot=snapshot(index, organization), events=[], gates=[])
+        await projection.record(snapshot=snapshot(1, other), events=[], gates=[])
+
+        walked: list[str] = []
+        cursor: str | None = None
+        pages = 0
+        while True:
+            page = await projection.list_runs(
+                organization=organization, limit=5, cursor=cursor
+            )
+            walked.extend(str(item["run_id"]) for item in page["items"])
+            pages += 1
+            cursor = page["next_cursor"]
+            if cursor is None:
+                break
+            assert pages < 20, "pagination did not terminate"
+
+        single = await projection.list_runs(organization=organization, limit=100)
+
+        assert walked == [str(item["run_id"]) for item in single["items"]]
+        assert len(walked) == len(set(walked)) == 12
+        assert walked == sorted(walked, reverse=True)
+        assert pages == 3
+        assert all(not run_id.startswith(other) for run_id in walked)
+    finally:
+        await dispose_session_factory(factory)

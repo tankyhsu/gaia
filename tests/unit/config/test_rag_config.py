@@ -26,3 +26,21 @@ def test_postgres_rag_accepts_complete_dependency_set() -> None:
         }
     )
     assert config.rag.provider == "postgres"
+
+
+def test_external_http_rag_requires_address_and_redacts_optional_key() -> None:
+    with pytest.raises(ValidationError, match="rag.base_url"):
+        GaiaApplicationConfig.model_validate({"rag": {"provider": "external-http"}})
+
+    config = GaiaApplicationConfig.model_validate(
+        {
+            "rag": {
+                "provider": "external-http",
+                "base_url": "https://knowledge.example.com",
+                "api_key": {"file": "/run/secrets/rag"},
+            }
+        }
+    )
+
+    assert config.rag.provider == "external-http"
+    assert config.redacted()["rag"]["api_key"] == {"file": "***"}

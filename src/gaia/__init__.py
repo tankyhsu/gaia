@@ -1,5 +1,30 @@
 """Public developer API for Gaia applications."""
 
+from gaia._authoring.scenario import (
+    AgentHandlerSpec,
+    ScenarioContext,
+    ScenarioContinuation,
+    ScenarioHandoff,
+    ScenarioResponse,
+    ScenarioSpec,
+    ScenarioTrace,
+    agent_handler,
+    continuation_handler,
+    get_agent_handler_spec,
+    get_continuation_handler_name,
+    get_scenario_spec,
+    scenario,
+)
+from gaia._authoring.tool import (
+    FunctionReadTool,
+    FunctionToolSpec,
+    FunctionWriteAdapter,
+    get_tool_spec,
+    read_tool,
+    write_tool,
+)
+from gaia._authoring.versioning import fingerprint
+from gaia.api.builder import GaiaAppBuilder
 from gaia.application import GaiaApplication
 from gaia.guardrails import (
     GuardedModelProvider,
@@ -20,12 +45,14 @@ from gaia.patterns import (
     AgentResult,
     AgentSpec,
     HandoffOrchestrator,
+    InMemoryHandoffOrchestrator,
     MultiAgentError,
     MultiAgentResult,
 )
 from gaia.runtime.function_runner import FunctionScenarioRunner
-from gaia.runtime.function_tools import function_write_tool
-from gaia.sdk.guardrail import (
+from gaia.runtime.function_tools import function_tool, function_write_tool
+from gaia.runtime.langgraph_runner import LangGraphScenarioRunner
+from gaia.spi.guardrail import (
     ContentGuardrail,
     GuardrailAction,
     GuardrailContext,
@@ -33,7 +60,7 @@ from gaia.sdk.guardrail import (
     GuardrailResult,
     GuardrailStage,
 )
-from gaia.sdk.model import (
+from gaia.spi.model import (
     ModelCallContext,
     ModelMessage,
     ModelProvider,
@@ -41,7 +68,7 @@ from gaia.sdk.model import (
     ModelStreamChunk,
     ModelUsage,
 )
-from gaia.sdk.prompt import (
+from gaia.spi.prompt import (
     PromptArtifact,
     PromptLifecycleStatus,
     PromptMessage,
@@ -52,7 +79,7 @@ from gaia.sdk.prompt import (
     PromptValidation,
     PromptVersion,
 )
-from gaia.sdk.rag import (
+from gaia.spi.rag import (
     Citation,
     DocumentAccess,
     DocumentSource,
@@ -60,32 +87,22 @@ from gaia.sdk.rag import (
     RetrievalHit,
     RetrievalRequest,
 )
-from gaia.sdk.scenario import (
-    ScenarioContext,
-    ScenarioResponse,
-    ScenarioSideEffect,
-    ScenarioSpec,
-    ScenarioTrace,
-    get_scenario_spec,
-    scenario,
-)
-from gaia.sdk.tool import (
-    FunctionReadTool,
-    FunctionWriteAdapter,
-    get_tool_spec,
-    read_tool,
-    write_tool,
-)
+from gaia.spi.tool import ScenarioSideEffect, ScenarioTools
 
 __all__ = [
     "AgentContext",
+    "AgentHandlerSpec",
     "AgentHandoff",
     "AgentResult",
     "AgentSpec",
     "ContentGuardrail",
     "FunctionScenarioRunner",
+    "LangGraphScenarioRunner",
     "FunctionReadTool",
+    "FunctionToolSpec",
     "FunctionWriteAdapter",
+    "GaiaAppBuilder",
+    "ScenarioTools",
     "GaiaApplication",
     "GuardedModelProvider",
     "GuardrailAction",
@@ -100,6 +117,7 @@ __all__ = [
     "GuardrailStage",
     "GuardrailViolation",
     "HandoffOrchestrator",
+    "InMemoryHandoffOrchestrator",
     "Citation",
     "DocumentAccess",
     "DocumentSource",
@@ -128,12 +146,20 @@ __all__ = [
     "RetrievalHit",
     "RetrievalRequest",
     "ScenarioContext",
+    "ScenarioContinuation",
+    "ScenarioHandoff",
     "ScenarioResponse",
     "ScenarioSideEffect",
     "ScenarioSpec",
     "ScenarioTrace",
+    "agent_handler",
+    "continuation_handler",
+    "fingerprint",
+    "get_agent_handler_spec",
+    "get_continuation_handler_name",
     "get_scenario_spec",
     "get_tool_spec",
+    "function_tool",
     "function_write_tool",
     "read_tool",
     "scenario",

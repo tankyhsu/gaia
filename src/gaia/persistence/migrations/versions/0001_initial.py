@@ -2,6 +2,7 @@
 
 from alembic import op
 
+from gaia.persistence.legacy_runtime_models import LegacyBase
 from gaia.persistence.models import Base
 
 revision = "0001_initial"
@@ -12,7 +13,9 @@ depends_on = None
 
 def upgrade() -> None:
     Base.metadata.create_all(op.get_bind())
+    LegacyBase.metadata.create_all(op.get_bind())
 
 
 def downgrade() -> None:
+    LegacyBase.metadata.drop_all(op.get_bind())
     Base.metadata.drop_all(op.get_bind())

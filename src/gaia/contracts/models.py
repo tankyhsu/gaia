@@ -76,6 +76,13 @@ class CommandStatus(StrEnum):
     FAILED = "failed"
     REJECTED = "rejected"
     UNKNOWN = "unknown"
+    # Terminal: automatic recovery exhausted its budget (or the write's
+    # recovery strategy is `at_most_once_manual`, which has none) without
+    # resolving the write's true outcome. This is an operator-visible marker
+    # only -- there is deliberately no API to move a command out of this
+    # status. See docs/施工图/13-重构施工图-装配打通与Runtime拆解.md task D1.1 and
+    # developer-docs/mechanisms.md.
+    NEEDS_ATTENTION = "needs_attention"
 
 
 class ToolKind(StrEnum):
@@ -83,10 +90,25 @@ class ToolKind(StrEnum):
     WRITE = "write"
 
 
+class WriteRecoveryStrategy(StrEnum):
+    RECONCILABLE = "reconcilable"
+    IDEMPOTENT = "idempotent"
+    AT_MOST_ONCE_MANUAL = "at_most_once_manual"
+
+
 class ToolResultStatus(StrEnum):
     SUCCEEDED = "succeeded"
     FAILED = "failed"
     UNKNOWN = "unknown"
+
+
+class ActionStatus(StrEnum):
+    PENDING = "pending"
+    WAITING_HUMAN = "waiting_human"
+    EXECUTING = "executing"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+    SKIPPED = "skipped"
 
 
 class Decision(StrEnum):
@@ -112,13 +134,26 @@ class ErrorCode(StrEnum):
     CONTEXT_INSUFFICIENT = "CONTEXT_INSUFFICIENT"
     MODEL_CAPABILITY_MISSING = "MODEL_CAPABILITY_MISSING"
     MODEL_UNAVAILABLE = "MODEL_UNAVAILABLE"
+    MODEL_OUTPUT_INVALID = "MODEL_OUTPUT_INVALID"
     TOOL_TIMEOUT = "TOOL_TIMEOUT"
+    GUARDRAIL_BLOCKED = "GUARDRAIL_BLOCKED"
     SIDE_EFFECT_UNKNOWN = "SIDE_EFFECT_UNKNOWN"
     HUMAN_GATE_REJECTED = "HUMAN_GATE_REJECTED"
     HUMAN_GATE_EXPIRED = "HUMAN_GATE_EXPIRED"
+    # The Workflow says this gate was approved, but Gaia's audit projection --
+    # the only store an authenticated approval is written to -- does not agree.
+    GATE_DECISION_UNVERIFIED = "GATE_DECISION_UNVERIFIED"
+    GATE_NOT_PENDING = "GATE_NOT_PENDING"
     BUDGET_EXCEEDED = "BUDGET_EXCEEDED"
+    HANDOFF_NOT_ALLOWED = "HANDOFF_NOT_ALLOWED"
+    HANDOFF_TARGET_NOT_FOUND = "HANDOFF_TARGET_NOT_FOUND"
+    CONTINUATION_HANDLER_NOT_FOUND = "CONTINUATION_HANDLER_NOT_FOUND"
     RUN_NOT_RESUMABLE = "RUN_NOT_RESUMABLE"
     INTERNAL_ERROR = "INTERNAL_ERROR"
+    RUNTIME_ILLEGAL_TRANSITION = "RUNTIME_ILLEGAL_TRANSITION"
+    POLICY_OVERRIDE_INVALID = "POLICY_OVERRIDE_INVALID"
+    IDENTITY_MISMATCH = "IDENTITY_MISMATCH"
+    DURABLE_EXECUTION_REQUIRED = "DURABLE_EXECUTION_REQUIRED"
 
 
 class ErrorCategory(StrEnum):
@@ -187,13 +222,57 @@ class ErrorResponse(ContractModel):
     details: dict[str, Any] = Field(default_factory=dict)
 
 
+class ApprovalView(ContractModel):
+    """Redacted business presentation for one human confirmation."""
+
+    title: str = Field(min_length=1, max_length=200)
+    summary: str = Field(min_length=1, max_length=2000)
+    fields: dict[str, Any] = Field(default_factory=dict)
+    risk_explanation: str | None = Field(default=None, max_length=2000)
+
+
+class PlannedActionSnapshot(ContractModel):
+    step_id: str
+    tool_name: str
+    risk_level: RiskLevel
+    status: ActionStatus
+    depends_on: list[str] = Field(default_factory=list)
+    command_id: str | None = None
+    gate_id: str | None = None
+    approval_view: ApprovalView | None = None
+    result: dict[str, Any] | None = None
+    error_code: ErrorCode | str | None = None
+
+
+class ActionPlanSnapshot(ContractModel):
+    version: Literal["1"] = "1"
+    current_action: int = Field(default=0, ge=0)
+    actions: list[PlannedActionSnapshot]
+
+
+class HandoffSnapshot(ContractModel):
+    current_agent: str
+    reason: str
+    handoff_count: int = Field(ge=1)
+
+
+class ContinuationSnapshot(ContractModel):
+    handler: str
+    ready: bool
+
+
 class RunSnapshot(ContractModel):
     run_id: str
+    trace_id: str | None = None
     scenario_id: str
     mode: RunMode
     status: RunStatus
     user: UserIdentity
     version_bundle: VersionBundle
+    pending_result: dict[str, Any] | None = None
+    action_plan: ActionPlanSnapshot | None = None
+    handoff: HandoffSnapshot | None = None
+    continuation: ContinuationSnapshot | None = None
     result: dict[str, Any] | None = None
     error: ErrorResponse | None = None
     pending_gate_id: str | None = None
@@ -202,6 +281,19 @@ class RunSnapshot(ContractModel):
 
     _created_at_utc = field_validator("created_at")(_utc)
     _updated_at_utc = field_validator("updated_at")(_utc)
+
+
+class RunPage(ContractModel):
+    """A page of `RunSnapshot`s, newest first.
+
+    `next_cursor` is an opaque token: `None` means this is the last page.
+    Pass it back as the `cursor` query parameter to fetch the next page.
+    Do not parse or construct it -- its encoding is an implementation detail
+    of the Runtime and may change without notice.
+    """
+
+    items: list[RunSnapshot]
+    next_cursor: str | None = None
 
 
 class RunEvent(ContractModel):
@@ -229,6 +321,7 @@ class HumanGate(ContractModel):
     reason: str
     risk_level: RiskLevel
     requested_action: dict[str, Any]
+    approval_view: ApprovalView | None = None
     status: GateStatus
     requested_by: str
     decided_by: str | None = None
@@ -359,6 +452,7 @@ class ToolDefinition(ContractModel):
     timeout_seconds: int = Field(ge=1)
     max_retries: int = Field(ge=0, le=1)
     idempotent: bool
+    recovery_strategy: WriteRecoveryStrategy | None = None
     allowed_environments: list[RunMode] = Field(default_factory=lambda: [RunMode.MOCK])
 
     @field_validator("required_roles")

@@ -3,7 +3,7 @@ from pathlib import Path
 from gaia.guardrails import GuardrailPipeline, PatternGuardrail, PatternRule
 from gaia.guardrails.store import SqlAlchemyGuardrailDecisionStore
 from gaia.persistence.database import dispose_session_factory, initialize_database
-from gaia.sdk.guardrail import GuardrailAction, GuardrailContext, GuardrailStage
+from gaia.spi.guardrail import GuardrailAction, GuardrailContext, GuardrailStage
 
 
 async def test_guardrail_decisions_persist_without_content(tmp_path: Path) -> None:

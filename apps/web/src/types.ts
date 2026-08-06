@@ -22,6 +22,21 @@ export interface RunSnapshot {
   status: RunStatus;
   user: UserIdentity;
   version_bundle: Record<string, string>;
+  pending_result: Record<string, unknown> | null;
+  action_plan: {
+    version: "1";
+    current_action: number;
+    actions: PlannedAction[];
+  } | null;
+  handoff: {
+    current_agent: string;
+    reason: string;
+    handoff_count: number;
+  } | null;
+  continuation: {
+    handler: string;
+    ready: boolean;
+  } | null;
   result: Record<string, unknown> | null;
   error: {
     code: string;
@@ -34,6 +49,37 @@ export interface RunSnapshot {
   pending_gate_id: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface RunPage {
+  items: RunSnapshot[];
+  next_cursor: string | null;
+}
+
+export interface ApprovalView {
+  title: string;
+  summary: string;
+  fields: Record<string, unknown>;
+  risk_explanation: string | null;
+}
+
+export interface PlannedAction {
+  step_id: string;
+  tool_name: string;
+  risk_level: "low" | "medium" | "high";
+  status:
+    | "pending"
+    | "waiting_human"
+    | "executing"
+    | "succeeded"
+    | "failed"
+    | "skipped";
+  depends_on: string[];
+  command_id: string | null;
+  gate_id: string | null;
+  approval_view: ApprovalView | null;
+  result: Record<string, unknown> | null;
+  error_code: string | null;
 }
 
 export interface RunEvent {
@@ -51,13 +97,70 @@ export interface RunEvent {
 export interface HumanGate {
   gate_id: string;
   run_id: string;
+  command_id: string;
   reason: string;
   risk_level: string;
   requested_action: Record<string, unknown>;
+  approval_view: ApprovalView | null;
   status: string;
   requested_by: string;
+  decided_by: string | null;
+  comment: string | null;
   created_at: string;
   expires_at: string;
+  decided_at: string | null;
+}
+
+// Mirrors `DiagnosticExporter.export` in `src/gaia/diagnostics/bundle.py`. The
+// OpenAPI spec declares this endpoint's response as an untyped `{}` schema
+// (the route is `response_model=None`), so this type is hand-derived from the
+// backend source rather than generated -- kept intentionally narrow to the
+// fields the Console actually reads.
+export interface DiagnosticHumanGateSummary {
+  gate_id: string;
+  command_id: string;
+  status: string;
+  risk_level: string;
+  approval_view: ApprovalView | null;
+  // True once the gate has left `pending` -- does NOT imply `approved`.
+  decided: boolean;
+}
+
+export interface DiagnosticBundle {
+  schema_version: string;
+  run: Record<string, unknown>;
+  events: Array<Record<string, unknown>>;
+  human_gates: DiagnosticHumanGateSummary[];
+  side_effect_commands: Array<Record<string, unknown>>;
+  redaction: Record<string, string>;
+}
+
+export interface ToolInvocation {
+  invocation_id: string;
+  run_id: string;
+  scenario_id: string;
+  tool_name: string;
+  tool_version: string;
+  status: "succeeded" | "failed" | "blocked" | "timed_out";
+  input_ref: string;
+  output_ref: string | null;
+  started_at: string;
+  completed_at: string;
+  duration_ms: number;
+  error_code: string | null;
+}
+
+export interface RunToolObservability {
+  run_id: string;
+  summary: {
+    total: number;
+    succeeded: number;
+    failed: number;
+    blocked: number;
+    timed_out: number;
+    duration: DurationSummary;
+  };
+  invocations: ToolInvocation[];
 }
 
 export interface ReplaySnapshot {
@@ -94,6 +197,8 @@ export interface RuntimeSummary {
   success_rate: number;
   failure_rate: number;
   blocked_rate: number;
+  /** Runs a control deliberately refused: neither a success nor a failure. */
+  stopped_by_control: number;
   active_runs: number;
   stale_runs: number;
   pending_human_gates: number;

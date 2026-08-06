@@ -1,0 +1,28 @@
+# Gaia-only production deployment. The customer platform owns stateful
+# services and the public business ingress.
+console:
+  enabled: false
+ingress:
+  enabled: false
+secrets:
+  existingSecret: gaia-external-secrets
+gaia:
+  config:
+    gaia:
+      runtime:
+        execution:
+          provider: temporal
+          server_address: temporal.platform.example:7233
+          namespace: gaia-production
+          task_queue: gaia-production
+          tls_enabled: true
+      observability:
+        provider: langfuse
+        base_url: https://langfuse.platform.example
+        public_key:
+          env: LANGFUSE_PUBLIC_KEY
+        secret_key:
+          env: LANGFUSE_SECRET_KEY
+        environment: production
+temporalBootstrap:
+  enabled: false

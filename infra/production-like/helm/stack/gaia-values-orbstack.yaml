@@ -1,0 +1,97 @@
+image:
+  repository: gaia-framework
+  tag: product-like-hr
+  pullPolicy: Never
+
+console:
+  enabled: true
+  replicaCount: 1
+  image:
+    repository: gaia-console
+    tag: production-like
+    pullPolicy: Never
+
+api:
+  replicaCount: 1
+  appFactory: hr_showcase.app:create_app
+
+worker:
+  replicaCount: 1
+  appFactory: hr_showcase.app:create_app
+
+podDisruptionBudget:
+  enabled: false
+
+networkPolicy:
+  enabled: false
+
+extraEnv:
+  - name: DEEPSEEK_API_KEY
+    valueFrom:
+      secretKeyRef:
+        name: gaia-production-like-secrets
+        key: deepseek-api-key
+  - name: GAIA_REDIS_URL
+    valueFrom:
+      secretKeyRef:
+        name: gaia-production-like-secrets
+        key: redis-url
+
+gaia:
+  config:
+    gaia:
+      application:
+        name: Gaia HR Product Like
+        version: 0.1.0
+      profile: product-like
+      starters:
+        - persistence-postgres
+        - checkpoint-postgres
+        - model-openai-compatible
+        - cache-redis
+        - rate-limit-redis
+      runtime:
+        database_url:
+          env: GAIA_POSTGRES_URL
+        environment: sandbox
+        write_mode: approval_required
+        execution:
+          provider: temporal
+          server_address: temporal-frontend.temporal-product-like.svc.cluster.local:7233
+          namespace: gaia-product-like
+          task_queue: gaia-hr-product-like
+          tls_enabled: false
+      stores:
+        operational:
+          provider: postgres
+          auto_create: false
+          pool_size: 5
+          max_overflow: 10
+        checkpoint:
+          provider: postgres
+          auto_setup: true
+          pool_min_size: 1
+          pool_max_size: 5
+      redis:
+        url:
+          env: GAIA_REDIS_URL
+      cache:
+        provider: redis
+      rate_limit:
+        provider: redis
+      model:
+        provider: openai-compatible
+        model_id: deepseek-chat
+        base_url: https://api.deepseek.com/v1
+        api_key:
+          env: DEEPSEEK_API_KEY
+        timeout_seconds: 60
+      observability:
+        provider: langfuse
+        base_url: http://langfuse-web.langfuse-product-like.svc.cluster.local:3000
+        public_key:
+          env: LANGFUSE_PUBLIC_KEY
+        secret_key:
+          env: LANGFUSE_SECRET_KEY
+        environment: product-like
+        sample_rate: 1.0

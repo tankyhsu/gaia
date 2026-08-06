@@ -1,0 +1,204 @@
+nameOverride: ""
+fullnameOverride: ""
+
+image:
+  repository: gaia-framework
+  tag: production-like
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+console:
+  # Development surface. Production exposes the business API through
+  # infrastructure selected by the operator.
+  enabled: false
+  image:
+    repository: gaia-console
+    tag: production-like
+    pullPolicy: IfNotPresent
+  replicaCount: 2
+  service:
+    type: ClusterIP
+    port: 80
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 250m
+      memory: 128Mi
+
+api:
+  replicaCount: 2
+  appFactory: examples.controlled_task.app:create_app
+  service:
+    type: ClusterIP
+    port: 8000
+  resources:
+    requests:
+      cpu: 250m
+      memory: 384Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+
+worker:
+  replicaCount: 2
+  appFactory: examples.controlled_task.app:create_app
+  resources:
+    requests:
+      cpu: 250m
+      memory: 384Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+
+serviceAccount:
+  create: true
+  automountServiceAccountToken: false
+  annotations: {}
+  name: ""
+
+secrets:
+  existingSecret: gaia-production-like-secrets
+  keys:
+    postgresUrl: postgres-url
+    apiKey: api-key
+    langfusePublicKey: langfuse-public-key
+    langfuseSecretKey: langfuse-secret-key
+
+gaia:
+  config:
+    gaia:
+      application:
+        name: controlled-task-production-like
+        version: 1.0.0
+      profile: production-like
+      starters:
+        - core-runtime
+        - model-mock
+        - context-mock
+        - policy-controlled
+        - evaluation-fixtures
+        - import: examples.controlled_task.starter:STARTER
+      runtime:
+        database_url:
+          env: GAIA_POSTGRES_URL
+        environment: sandbox
+        write_mode: approval_required
+        execution:
+          provider: temporal
+          server_address: temporal-frontend.temporal.svc.cluster.local:7233
+          namespace: gaia-production-like
+          task_queue: gaia-production-like
+          tls_enabled: false
+      stores:
+        operational:
+          provider: postgres
+          auto_create: false
+          pool_size: 10
+          max_overflow: 20
+        checkpoint:
+          provider: postgres
+          auto_setup: true
+          pool_min_size: 2
+          pool_max_size: 10
+      model:
+        provider: mock
+        model_id: deterministic-mock
+      workflow:
+        provider: langgraph
+      context:
+        provider: mock
+      policy:
+        provider: controlled
+        human_gate_ttl_seconds: 3600
+      observability:
+        provider: langfuse
+        base_url: http://langfuse-web.langfuse.svc.cluster.local:3000
+        public_key:
+          env: LANGFUSE_PUBLIC_KEY
+        secret_key:
+          env: LANGFUSE_SECRET_KEY
+        environment: production-like
+        sample_rate: 1.0
+      evaluation:
+        cases: ./examples/controlled_task/specs/acceptance-cases.json
+
+extraEnv: []
+extraEnvFrom: []
+
+migration:
+  enabled: true
+  backoffLimit: 3
+  activeDeadlineSeconds: 600
+  hookDeletePolicy: before-hook-creation,hook-succeeded
+
+temporalBootstrap:
+  enabled: true
+  image:
+    repository: temporalio/admin-tools
+    tag: 1.31.2
+    pullPolicy: IfNotPresent
+  retention: 7d
+  backoffLimit: 6
+  activeDeadlineSeconds: 600
+  hookDeletePolicy: before-hook-creation,hook-succeeded
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  runAsGroup: 10001
+  fsGroup: 10001
+  seccompProfile:
+    type: RuntimeDefault
+
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+podAnnotations: {}
+podLabels: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}
+topologySpreadConstraints: []
+
+podDisruptionBudget:
+  enabled: true
+  api:
+    minAvailable: 1
+  worker:
+    minAvailable: 1
+  console:
+    minAvailable: 1
+
+autoscaling:
+  api:
+    enabled: false
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+  worker:
+    enabled: false
+    minReplicas: 2
+    maxReplicas: 20
+    targetCPUUtilizationPercentage: 70
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: gaia.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+networkPolicy:
+  enabled: true
+  ingressNamespaceSelector: {}

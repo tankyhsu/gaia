@@ -9,8 +9,8 @@ from typing import TYPE_CHECKING, Any, cast
 
 from gaia.config.models import CheckpointStoreSettings, MemoryStoreSettings, VectorStoreSettings
 from gaia.persistence.urls import psycopg_url
-from gaia.sdk.embedding import EmbeddingFunction
-from gaia.sdk.memory import MemoryItem
+from gaia.spi.embedding import EmbeddingFunction
+from gaia.spi.memory import MemoryItem
 
 if TYPE_CHECKING:
     from langgraph.store.postgres.base import PostgresIndexConfig

@@ -1,0 +1,88 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="900" viewBox="0 0 1440 900" role="img" aria-labelledby="title desc">
+  <title id="title">Gaia four-layer architecture panorama</title>
+  <desc id="desc">Gaia connects LangGraph logical orchestration, Temporal durable execution, and Langfuse observability through a controlled application container.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#071b24"/>
+      <stop offset="0.55" stop-color="#0b2c34"/>
+      <stop offset="1" stop-color="#123d3a"/>
+    </linearGradient>
+    <linearGradient id="gaia" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f4c95d"/>
+      <stop offset="1" stop-color="#e9904f"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="14" stdDeviation="18" flood-color="#001014" flood-opacity=".45"/>
+    </filter>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M0 0L12 6L0 12Z" fill="#8bd5ca"/>
+    </marker>
+    <style>
+      .title { font: 700 42px sans-serif; fill: #f6f1df; letter-spacing: 1px; }
+      .subtitle { font: 400 20px sans-serif; fill: #a8cbc9; }
+      .name { font: 700 28px sans-serif; fill: #f8f4e8; }
+      .dark-name { font: 800 30px sans-serif; fill: #16282a; }
+      .body { font: 400 18px sans-serif; fill: #c8ddda; }
+      .dark-body { font: 500 18px sans-serif; fill: #304143; }
+      .label { font: 700 16px sans-serif; fill: #8bd5ca; letter-spacing: 1.5px; }
+      .small { font: 400 15px sans-serif; fill: #8fb5b2; }
+      .line { fill: none; stroke: #8bd5ca; stroke-width: 4; marker-end: url(#arrow); }
+    </style>
+  </defs>
+  <rect width="1440" height="900" rx="32" fill="url(#bg)"/>
+  <circle cx="1300" cy="95" r="210" fill="#226b64" opacity=".18"/>
+  <circle cx="120" cy="810" r="250" fill="#d88c46" opacity=".09"/>
+
+  <text x="80" y="82" class="title">GAIA ARCHITECTURE PANORAMA</text>
+  <text x="82" y="118" class="subtitle">One application container. Three mature engines. No duplicate runtime.</text>
+
+  <g filter="url(#shadow)">
+    <rect x="80" y="175" width="1280" height="170" rx="28" fill="url(#gaia)"/>
+    <text x="120" y="225" class="label" style="fill:#5f4930">APPLICATION CONTAINER / CONTROL PLANE</text>
+    <text x="120" y="274" class="dark-name">GAIA</text>
+    <text x="120" y="309" class="dark-body">Config · Starters · Identity · Policy · Tool admission · API · Worker composition · Read-only Actuator</text>
+    <rect x="1020" y="216" width="290" height="82" rx="18" fill="#fff4d6" opacity=".72"/>
+    <text x="1050" y="248" class="dark-body">gaia.yaml</text>
+    <text x="1050" y="277" class="dark-body">API + Worker, same lifespan</text>
+  </g>
+
+  <path d="M320 345V425" class="line"/>
+  <path d="M720 345V425" class="line"/>
+  <path d="M1120 345V425" class="line"/>
+
+  <g filter="url(#shadow)">
+    <rect x="80" y="430" width="370" height="250" rx="26" fill="#123f4d" stroke="#2c7480" stroke-width="2"/>
+    <text x="115" y="475" class="label">LOGICAL ORCHESTRATION</text>
+    <text x="115" y="525" class="name">LangGraph</text>
+    <text x="115" y="565" class="body">State · Nodes · Routing</text>
+    <text x="115" y="597" class="body">Agent decisions · Handoffs</text>
+    <text x="115" y="640" class="small">Owns: what happens next</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="535" y="430" width="370" height="250" rx="26" fill="#17483f" stroke="#3b8d75" stroke-width="2"/>
+    <text x="570" y="475" class="label">DURABLE EXECUTION</text>
+    <text x="570" y="525" class="name">Temporal.io</text>
+    <text x="570" y="565" class="body">Workflow History · Activities</text>
+    <text x="570" y="597" class="body">Update · Signal · Retry · Recovery</text>
+    <text x="570" y="640" class="small">Owns: whether it survives</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="990" y="430" width="370" height="250" rx="26" fill="#3e3f35" stroke="#8c8b68" stroke-width="2"/>
+    <text x="1025" y="475" class="label" style="fill:#d7c879">OBSERVABILITY</text>
+    <text x="1025" y="525" class="name">Langfuse</text>
+    <text x="1025" y="565" class="body">Trace · Token · Cost</text>
+    <text x="1025" y="597" class="body">Prompt waterfall · Model evidence</text>
+    <text x="1025" y="640" class="small">Owns: why and how much</text>
+  </g>
+
+  <path d="M450 555H525" class="line"/>
+  <path d="M905 555H980" class="line"/>
+
+  <g>
+    <rect x="80" y="740" width="1280" height="100" rx="22" fill="#07171d" stroke="#28545a"/>
+    <text x="115" y="782" class="label">THE HARD BOUNDARY</text>
+    <text x="115" y="816" class="body">Gaia owns policy and composition — Temporal owns execution truth — LangGraph owns logic — Langfuse owns traces.</text>
+  </g>
+</svg>

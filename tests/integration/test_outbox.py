@@ -3,9 +3,10 @@ from __future__ import annotations
 from sqlalchemy import func, select
 
 from gaia.capabilities.outbox import DEAD_LETTER, OutboxDispatcher, SqlAlchemyOutboxStore
+from gaia.integrations.events import InProcessEventPublisher
 from gaia.persistence.database import dispose_session_factory, initialize_database
 from gaia.persistence.models import OutboxEventRecord
-from gaia.sdk.events import EventEnvelope, InProcessEventPublisher
+from gaia.spi.events import EventEnvelope
 
 
 async def test_outbox_commit_dispatch_and_business_rollback_share_transaction(tmp_path) -> None:

@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from gaia.contracts.models import ContextDocument, ContextEnvelope
-from gaia.sdk.context import ContextQuery, RunSession
+from gaia.spi.context import ContextQuery, RunSession
 
 
 class MockContextProvider:

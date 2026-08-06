@@ -9,8 +9,8 @@ from typing import Any
 from gaia.config import GaiaApplicationConfig, resolve_secret, resolve_store_url
 from gaia.persistence.checkpoint import InMemoryCheckpointProvider, SqliteCheckpointProvider
 from gaia.persistence.postgres import PostgresCheckpointProvider, PostgresMemoryStore
-from gaia.sdk.embedding import EmbeddingFunction
-from gaia.sdk.memory import MemoryStore
+from gaia.spi.embedding import EmbeddingFunction
+from gaia.spi.memory import MemoryStore
 
 
 class GaiaPersistenceResources:

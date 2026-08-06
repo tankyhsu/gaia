@@ -1,88 +1,63 @@
-# Gaia Framework M1 施工图
+# 施工图：已完成的实现记录
 
-## 1. 唯一目标
+> **这里不是待办清单。** 本目录记录 Gaia 从早期交付套件走到今天的施工过程——目标、
+> 任务卡、验收标准和当时的判断。**全部任务已完成**，其中一部分描述的架构此后又被替换掉了。
+>
+> 想知道**现在**是什么样，看这三处，不要看本目录：
+>
+> | 想知道 | 看哪里 |
+> | --- | --- |
+> | 这个框架是什么、能证明什么、不能证明什么 | [`docs/工程纪实-决策与缺陷.md`](../工程纪实-决策与缺陷.md) |
+> | 怎么用 | [`developer-docs/`](../../developer-docs/)（`make dev-docs` 本地预览） |
+> | 实际行为 | 代码与测试。冲突时以代码为准 |
+>
+> 按 [`archive/README.md`](../archive/README.md) 的同一条规矩：**不要编辑这些文件来
+> "修正"过时的表述**。它们的价值在于记录当时的判断，改写就毁掉了这个价值。
 
-本目录是 Gaia 从早期交付套件迁移为“AI 应用开发与运行框架”的唯一实现入口。
+## 各份施工图的状态
 
-Gaia M1 必须证明：业务构建者可以从场景模板生成简单 Demo 起点；开发者可以用统一的
-`GaiaApplication`、Starter、自动配置和 `gaia.yaml` 装配一个可运行、可检查、可测试的 AI
-应用；可选 Gaia Dev Console 在开发环境完成初始化并投影同一套真实配置和运行状态。
+| 施工图 | 状态 |
+| --- | --- |
+| [00-工程基线](00-工程基线.md)、[01-目标架构与模块边界](01-目标架构与模块边界.md)、[01-公共契约](01-公共契约.md) | 已完成 |
+| [02-配置模型与自动装配](02-配置模型与自动装配.md)、[03-GaiaApplication生命周期与Actuator](03-GaiaApplication生命周期与Actuator.md) | 已完成 |
+| [02-Runtime状态机与事务边界](02-Runtime状态机与事务边界.md) | **已被取代**：SQL Runtime 整个换成了 Temporal |
+| [03-controlled-task黄金场景](03-controlled-task黄金场景.md)、[04-实现任务清单](04-实现任务清单.md) | 已完成 |
+| [05-Dev-Console设计](05-Dev-Console设计.md) | 已完成；Console 的演示与证据页此后又重做过，见 18 |
+| [06-现有代码迁移图](06-现有代码迁移图.md) | **已被取代**：迁移已完成，图中多数文件已不存在 |
+| [07-质量策略与测试矩阵](07-质量策略与测试矩阵.md)、[08-Gaia-Test-Kit设计](08-Gaia-Test-Kit设计.md) | 已完成 |
+| [09-Runtime安全边界与Sandbox](09-Runtime安全边界与Sandbox.md) | 已完成；写入边界仍是 `src/gaia/runtime/safety.py` |
+| [10-Redis限流与Outbox](10-Redis限流与Outbox.md)、[11-Python原生生命周期与集成边界](11-Python原生生命周期与集成边界.md) | 已完成 |
+| [12-Agent研发SOP与流水线](12-Agent研发SOP与流水线.md) | 已完成 |
+| [13-重构施工图-装配打通与Runtime拆解](13-重构施工图-装配打通与Runtime拆解.md) | 已完成（工程 A–H）；其中 Runtime 拆解部分随 SQL Runtime 一起被取代 |
+| [17-TemporalIO-迁移任务清单](17-TemporalIO-迁移任务清单.md) | 已完成：Temporal 成为唯一执行 provider |
+| [18-演示可用性施工图](18-演示可用性施工图.md) | 已完成（D1–D6） |
+| [实现状态](实现状态.md) | **历史快照**，停在 Temporal 迁移之前 |
 
-实现者按以下顺序阅读：
+## 仍然成立的硬约束
 
-1. [00-框架定位与工程基线](00-工程基线.md)
-2. [01-目标架构与模块边界](01-目标架构与模块边界.md)
-3. [02-配置模型与自动装配](02-配置模型与自动装配.md)
-4. [03-GaiaApplication生命周期与Actuator](03-GaiaApplication生命周期与Actuator.md)
-5. [02-Runtime状态机与事务边界](02-Runtime状态机与事务边界.md)
-6. [05-Dev Console 设计](05-Dev-Console设计.md)
-7. [06-现有代码迁移图](06-现有代码迁移图.md)
-8. [07-质量策略与测试矩阵](07-质量策略与测试矩阵.md)
-9. [08-Gaia Test Kit 设计](08-Gaia-Test-Kit设计.md)
-10. [09-Runtime 安全边界与 Sandbox](09-Runtime安全边界与Sandbox.md)
-11. [10-Redis 缓存、限流与 Outbox](10-Redis限流与Outbox.md)
-12. [11-Python 原生生命周期与集成边界](11-Python原生生命周期与集成边界.md)
-13. [12-Agent 研发 SOP 与流水线](12-Agent研发SOP与流水线.md)
-14. [04-实现任务清单](04-实现任务清单.md)
-15. [应用 Workflow 扩展模板](../应用开发/Workflow扩展模板.md)
-
-当前进度和可复现证据见[实现状态](实现状态.md)。
-
-## 2. 规范优先级
-
-发生冲突时按以下顺序裁决：
-
-1. 本施工图定义的框架边界和机器可读测试；
-2. `src/gaia/contracts/` 与公开 OpenAPI；
-3. `gaia.yaml` 配置模型；
-4. 示例应用自己的 `specs/` 与 README；
-5. 其他历史设计文档。
-
-旧 `controlled-task` 规格只能约束示例应用，不能反向定义 Gaia 框架公共契约。
-
-## 3. 框架化硬约束
+下面这些不是历史，是现在仍在执行的边界。改动触碰到其中任何一条时，先想清楚再动：
 
 - `src/gaia/runtime/` 不得 import 任何具体示例、Mock 资源或业务 Intent。
 - FastAPI lifespan 是根资源作用域，`src/gaia/application/` 管理 Gaia 组件子作用域。
 - Dev Console、CLI、YAML 和 API 使用同一个 `GaiaApplicationConfig`，不得各自发明配置结构。
-- Dev Console 是独立本地开发进程，不进入生产应用的 Python 包、组件图或开发基础设施 Compose。
+- Dev Console 是独立本地开发进程，不进入生产应用的 Python 包、组件图或 Compose。
 - Starter 只提供组件声明、默认配置和 Factory，不直接启动进程或执行 Run。
 - `configure()` 不得连接外部系统；application-scoped 资源只能由 `AsyncExitStack` 进入。
-- Core、Integration、Capability Pack 和客户 Adapter 必须遵守 11 号施工图的依赖方向。
 - 自动配置必须可解释：每个组件记录来源、实现、配置 Profile、替换点和装配原因。
 - 复杂业务逻辑留在应用代码中；可配置不等于把 Workflow、规则和 Adapter 做成低代码。
-- `controlled-task` 必须作为示例验证框架，不得继续成为 Runtime 内置特例。
+- `controlled-task` 只是示例，不得成为 Runtime 内置特例。
 - 历史 Run 的 `version_bundle` 不因后续配置变更而改变。
 - Test Kit 从外部驱动应用测试，不进入 Runtime 的线上请求主链。
 - `runtime.environment` 是服务端安全事实；客户端 `RunRequest.mode` 只能匹配，不能切换环境。
+- `src/gaia/runtime/safety.py` 是不可绕过的写入边界，改它要有充分理由。
+- `GaiaRuntimeWorkflow` 是重放关键代码，改动必须通过
+  `tests/integration/test_workflow_replay.py` 的历史回放。
 
-## 4. M1 完成定义
-
-只有以下事实全部成立，才可以声称 Gaia Framework M1 完成：
-
-1. `gaia init` 能生成一个可安装、可运行、可测试的独立应用。
-2. `gaia check` 能加载并校验 `gaia.yaml`、Profile、Starter 和组件依赖。
-3. `GaiaApplication` 能完成 `created -> configured -> started -> stopped` 生命周期。
-4. 至少五类组件通过 Starter 自动装配：Model、Workflow、Context、Tool、Policy。
-5. Runtime 不再 import `controlled-task` 或具体 Mock 实现。
-6. Actuator 返回应用、配置、组件、健康状态、版本信息和通用 Runtime 运行摘要。
-7. Dev Console 的 Quick Start 支持业务场景初始化；其余页面按概览、组件、运行、配置和测试
-   组织开发任务，配置只读投影当前生效值与来源。
-8. 原有 Runtime、HumanGate、幂等、副作用恢复与 SSE 行为不回归。
-9. `controlled-task` 作为示例应用通过原有验收样本。
-10. 全部质量门禁和独立子 Agent 验证通过。
-11. Runtime 对服务端环境、工具环境、角色、风险、写入上限和 Adapter 定义实施不可绕过校验。
-12. Redis 与 Outbox 作为可选 Starter，不成为 Core Runtime 的强制依赖或持久状态捷径。
-13. 配置阶段零资源副作用，ASGI lifespan 能对所有 application-scoped 资源逆序释放。
-
-## 5. 全量质量门禁
+## 质量门禁
 
 ```bash
-cd /path/to/gaia
 make setup
 make verify
 ```
 
-真实 PostgreSQL 与 Redis 验证由 GitHub service container 承担。外部模型验证在研发阶段仅允许
-开发者显式手工触发，不进入 GitHub 自动流水线。
-不得在自动验收中删除本地开发基础设施的数据卷。
+提交前跑 `make change-ready`：仓库有提交闸门，直接 `git commit` 会被拒。

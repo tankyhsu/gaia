@@ -1,0 +1,34 @@
+image:
+  pullPolicy: Never
+
+console:
+  enabled: true
+  replicaCount: 1
+  image:
+    pullPolicy: Never
+
+api:
+  replicaCount: 1
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 768Mi
+
+worker:
+  replicaCount: 1
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 768Mi
+
+podDisruptionBudget:
+  enabled: false
+
+networkPolicy:
+  enabled: false

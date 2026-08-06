@@ -1,0 +1,14 @@
+.git
+.github
+.venv
+.mypy_cache
+.pytest_cache
+.ruff_cache
+__pycache__
+*.pyc
+apps/web/node_modules
+apps/web/dist
+site
+var
+.env
+infra/production-like/.env

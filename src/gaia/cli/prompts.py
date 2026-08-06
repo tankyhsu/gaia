@@ -15,7 +15,7 @@ from gaia.config import GaiaApplicationConfig, resolve_secret
 from gaia.contracts.models import RunMode
 from gaia.integrations.prompt_postgres import PostgresPromptRegistry
 from gaia.persistence.database import session_factory_resource
-from gaia.sdk.prompt import PromptArtifact, PromptRef, PromptValidation
+from gaia.spi.prompt import PromptArtifact, PromptRef, PromptValidation
 from gaia.testing.models import TestReport
 
 

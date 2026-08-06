@@ -1,0 +1,15 @@
+apiVersion: v2
+name: gaia-production-like
+description: Production-shaped Kubernetes deployment for Gaia API, Workers, and Console
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+kubeVersion: ">=1.28.0-0"
+home: https://github.com/openai/gaia
+keywords:
+  - gaia
+  - agents
+  - temporal
+  - langgraph
+maintainers:
+  - name: Gaia maintainers

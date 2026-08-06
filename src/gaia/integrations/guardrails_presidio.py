@@ -5,7 +5,7 @@ from __future__ import annotations
 from importlib import import_module
 from typing import Any
 
-from gaia.sdk.guardrail import (
+from gaia.spi.guardrail import (
     GuardrailAction,
     GuardrailContext,
     GuardrailResult,

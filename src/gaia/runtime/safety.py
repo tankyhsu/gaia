@@ -14,7 +14,12 @@ from gaia.contracts.models import (
     WriteMode,
 )
 from gaia.runtime.dependencies import SideEffectProposal
-from gaia.runtime.policy import PolicyDenied, validate_roles, validate_tool_allowed
+from gaia.runtime.policy import (
+    PolicyDenied,
+    stricter_write_mode,
+    validate_roles,
+    validate_tool_allowed,
+)
 
 
 class SafetyViolation(ValueError):
@@ -82,19 +87,10 @@ def evaluate_side_effect(
             "proposal risk does not match registered tool risk",
         )
 
-    effective_mode = _stricter_write_mode(environment_write_mode, policy.write_mode)
+    effective_mode = stricter_write_mode(environment_write_mode, policy.write_mode)
     if effective_mode == WriteMode.DISABLED:
         raise SafetyViolation(ErrorCode.WRITE_DISABLED, configured_environment.value)
     return SideEffectDecision(
         requires_approval=(effective_mode == WriteMode.APPROVAL_REQUIRED or risk_requires_approval),
         definition=definition,
     )
-
-
-def _stricter_write_mode(first: WriteMode, second: WriteMode) -> WriteMode:
-    rank = {
-        WriteMode.DISABLED: 0,
-        WriteMode.APPROVAL_REQUIRED: 1,
-        WriteMode.ENABLED: 2,
-    }
-    return first if rank[first] <= rank[second] else second

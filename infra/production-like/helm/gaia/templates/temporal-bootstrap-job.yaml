@@ -1,0 +1,70 @@
+{{- if .Values.temporalBootstrap.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "gaia.fullname" . }}-temporal-bootstrap
+  labels:
+    {{- include "gaia.labels" . | nindent 4 }}
+    app.kubernetes.io/component: temporal-bootstrap
+  annotations:
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-weight: "-20"
+    helm.sh/hook-delete-policy: {{ .Values.temporalBootstrap.hookDeletePolicy | quote }}
+spec:
+  backoffLimit: {{ .Values.temporalBootstrap.backoffLimit }}
+  activeDeadlineSeconds: {{ .Values.temporalBootstrap.activeDeadlineSeconds }}
+  ttlSecondsAfterFinished: 300
+  template:
+    metadata:
+      labels:
+        {{- include "gaia.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: temporal-bootstrap
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: temporal-bootstrap
+          image: "{{ .Values.temporalBootstrap.image.repository }}:{{ .Values.temporalBootstrap.image.tag }}"
+          imagePullPolicy: {{ .Values.temporalBootstrap.image.pullPolicy }}
+          command:
+            - /bin/sh
+            - -ec
+            - |
+              until temporal operator cluster health --address "$TEMPORAL_ADDRESS"; do sleep 2; done
+              temporal operator namespace describe --address "$TEMPORAL_ADDRESS" --namespace "$TEMPORAL_NAMESPACE" >/dev/null 2>&1 ||
+                temporal operator namespace create --address "$TEMPORAL_ADDRESS" --namespace "$TEMPORAL_NAMESPACE" --retention "$TEMPORAL_RETENTION"
+              until temporal operator search-attribute list --address "$TEMPORAL_ADDRESS" --namespace "$TEMPORAL_NAMESPACE" >/tmp/search-attributes.txt 2>/dev/null; do sleep 2; done
+              for attribute in GaiaOrganization GaiaScenarioId GaiaRunStatus; do
+                grep -q "$attribute" /tmp/search-attributes.txt ||
+                  temporal operator search-attribute create --address "$TEMPORAL_ADDRESS" --namespace "$TEMPORAL_NAMESPACE" --name "$attribute" --type Keyword
+              done
+          env:
+            - name: TEMPORAL_ADDRESS
+              value: {{ .Values.gaia.config.gaia.runtime.execution.server_address | quote }}
+            - name: TEMPORAL_NAMESPACE
+              value: {{ .Values.gaia.config.gaia.runtime.execution.namespace | quote }}
+            - name: TEMPORAL_RETENTION
+              value: {{ .Values.temporalBootstrap.retention | quote }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+{{- end }}

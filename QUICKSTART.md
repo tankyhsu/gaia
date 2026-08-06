@@ -36,19 +36,27 @@ uv run gaia init "$APP_DIR" \
 
 | 模板 | 用途 |
 | --- | --- |
-| `basic` | 处理文本和文档：总结、分类、信息抽取或内容生成 |
+| `basic` | 最小技术骨架：验证项目结构、模型调用和测试链路 |
 | `knowledge` | 基于企业知识回答：按权限检索资料并标明来源 |
 | `approval` | 连接并操作业务系统：调用接口并在关键步骤人工确认 |
 
-Dev Console 会在三类模板下分别展示“简历阅读”“员工手册”“请假办理”参考示例，帮助业务
-构建者先理解可实现的体验，再生成自己的项目起点。参考示例通过独立 Showcase 应用提供，
-不把 HR 业务定义写入 Gaia 核心模块。
+`basic` 和 `knowledge` 的 mock 开发 Profile 默认使用 `runtime.execution.provider: in_process`，便于
+本地测试；它不是生产建议。`approval` 从开发期就显式使用 Temporal。所有生成项目的 customer
+Profile 都显式使用 Temporal，Gaia 会拒绝 customer 配置选择 in-process Runtime。
+
+`basic` 是开发者起步骨架，不作为业务构建者的独立应用类型。Dev Console 的首次引导只展示
+能够形成企业上下文或业务执行闭环的 `knowledge` 和 `approval`。
+
+Dev Console 的 Quick Start 集中展示“入职权限开通”“员工政策与个人假期问答”“请假办理”
+三个参考应用，帮助业务构建者先理解可实现的体验，再生成自己的项目起点。日常 Dev Console
+不展示 Showcase 业务内容，只观察当前应用的组件、运行、配置、Prompt 和测试。参考应用通过
+独立 Showcase 提供，不把 HR 业务定义写入 Gaia 核心模块。
 
 本地同时运行多个应用时，可以分别指定 Console 要观察的 API 和参考示例地址：
 
 ```bash
-VITE_GAIA_API_TARGET=http://localhost:8001 \
-VITE_GAIA_SHOWCASE_URL=http://localhost:4173 \
+VITE_GAIA_API_TARGET=http://127.0.0.1:8001 \
+VITE_GAIA_SHOWCASE_URL=http://127.0.0.1:4173 \
 npm --prefix apps/web run dev -- --port 4174
 ```
 
@@ -131,16 +139,32 @@ async def summarize(context: ScenarioContext) -> dict[str, object]:
 在 `app.py` 中显式注册：
 
 ```python
-dependencies=ApiDependencies.from_scenarios(
-    gaia_application.config,
-    hello,
-    summarize,
-    prompt_provider=lambda: gaia_application.get_component("prompt-file"),
+from typing import cast
+
+from gaia import GaiaAppBuilder
+from gaia.spi.prompt import PromptProvider
+
+dependencies = (
+    GaiaAppBuilder(gaia_application.config)
+    .scenarios(hello, summarize)
+    .prompts(
+        lambda: cast(
+            PromptProvider,
+            gaia_application.get_component("prompt-file"),
+        )
+    )
+    .dependencies()
 )
 ```
 
 普通函数由 `FunctionScenarioRunner` 适配到唯一的 `ScenarioRunner` SPI。它不需要 LangGraph，
-但仍经过 `PersistentRuntimeEngine`，不会形成第二条绕开安全边界的执行链。
+但仍经过当前配置的 Gaia Runtime，不会形成第二条绕开安全边界的执行链。in-process 模式适合
+一次请求内完成的只读或低风险流程；出现 SideEffect、Handoff 或跨进程等待时会明确要求切换
+Temporal，而不是静默降低保障。
+
+场景读取业务系统时使用 `context.tools.call(...)`，检索企业知识时使用
+`context.retriever.retrieve(...)`，调用模型时使用 `context.model`。这些能力都绑定当前 Run 的
+用户、租户、角色和环境，不需要通过闭包传递 Client。
 
 ## 4. 使用文件 Prompt
 
@@ -241,8 +265,8 @@ make dev-console
 
 ## 5. 增加受控写入
 
-写工具不能只靠函数签名推断安全性。它必须声明风险、角色、可用环境和 `reconcile`；后者用于超时
-或进程中断后确认外部系统是否已经执行。
+写工具不能只靠函数签名推断安全性。默认恢复策略是 `reconcilable`，需要提供 `reconcile`，
+用于超时或进程中断后确认外部系统是否已经执行。
 
 ```python
 from gaia import write_tool
@@ -271,11 +295,16 @@ async def publish_document(
     return result
 ```
 
-Scenario 只提出副作用，不直接调用写函数：
+如果目标 API 原生支持幂等键，可以声明
+`recovery_strategy=WriteRecoveryStrategy.IDEMPOTENT` 而不提供 `reconcile`。两种能力都没有的
+旧系统使用 `AT_MOST_ONCE_MANUAL`：Runtime 不会自动重放不确定写入，而是将 Run 阻断并交给
+人工确认。
+
+Scenario 只通过受限 Tool 上下文提出副作用，不直接调用写函数：
 
 ```python
-from gaia import ScenarioResponse, ScenarioSideEffect
-from gaia.contracts.models import RiskLevel, WriteMode
+from gaia import ScenarioResponse
+from gaia.contracts.models import ApprovalView, WriteMode
 
 
 @scenario(
@@ -286,25 +315,55 @@ from gaia.contracts.models import RiskLevel, WriteMode
     max_model_calls=0,
 )
 async def publish(context: ScenarioContext) -> ScenarioResponse:
+    if context.tools is None:
+        raise RuntimeError("Gaia scenario tools are not configured")
     return ScenarioResponse.propose(
-        ScenarioSideEffect(
+        context.tools.propose(
+            publish_document,
             step_id="publish",
-            tool_name="publish-document",
             payload={"document_id": context.text},
             reason="Publishing changes a durable business record.",
-            risk_level=RiskLevel.HIGH,
-        )
+            approval_view=ApprovalView(
+                title="Confirm publication",
+                summary=f"Publish document {context.text}.",
+                fields={"document_id": context.text},
+            ),
+        ),
+        pending_result={
+            "message": "The document is ready for approval.",
+            "document_id": context.text,
+        },
     )
 ```
 
 把场景和工具显式装进应用：
 
 ```python
-dependencies=ApiDependencies.from_scenarios(
-    gaia_application.config,
-    hello,
-    publish,
-    write_tools=(publish_document,),
+from gaia import GuardrailStage, PatternGuardrail, PatternRule
+
+injection = PatternGuardrail(
+    "prompt-injection",
+    (
+        PatternRule(
+            pattern=r"ignore\s+(all\s+)?previous\s+instructions",
+            code="PROMPT_INJECTION_BLOCKED",
+        ),
+    ),
+)
+
+dependencies = (
+    GaiaAppBuilder(gaia_application.config)
+    .scenarios(hello, publish)
+    .tools(publish_document)
+    .guardrails(
+        injection,
+        stages=(
+            GuardrailStage.INPUT,
+            GuardrailStage.RETRIEVAL,
+            GuardrailStage.TOOL_INPUT,
+        ),
+    )
+    .dependencies()
 )
 ```
 
@@ -325,6 +384,10 @@ curl -fsS -X POST \
 
 Gaia 在批准后执行工具，并使用 Run 与步骤派生的稳定幂等键。风险声明、策略、环境和工具定义不一致
 时，Runtime 在外部写入前拒绝请求。
+
+开发模式可以从 Quick Start 打开三个独立 Showcase，先理解读取、检索、模型、规则、人工确认
+和写入如何组合。验证自己项目时，通过应用界面或 `/v1/runs` 发起请求，再到 Dev Console 的
+“运行”页查看业务结果、当前版本、调用哈希和技术错误。
 
 ## 6. Profile 和基础设施
 

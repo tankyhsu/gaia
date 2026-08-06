@@ -69,6 +69,13 @@ class OnMissingComponent:
         return not found, self.component_id
 
 
+@dataclass(frozen=True)
+class OnScenarioModules:
+    def match(self, config: GaiaApplicationConfig, registry: ComponentRegistry) -> tuple[bool, str]:
+        modules = config.scenarios.modules
+        return bool(modules), f"scenarios.modules={list(modules)}"
+
+
 @runtime_checkable
 class GaiaStarter(Protocol):
     @property

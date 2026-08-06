@@ -9,7 +9,7 @@ import httpx
 from pydantic import BaseModel, ConfigDict
 
 from gaia.config import GaiaApplicationConfig, resolve_secret
-from gaia.sdk.embedding import EmbeddingFunction
+from gaia.spi.embedding import EmbeddingFunction
 
 
 class _EmbeddingData(BaseModel):

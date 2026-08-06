@@ -1,0 +1,56 @@
+gaia:
+  application:
+    name: Gaia HR Dev Full
+    version: 0.1.0
+  profile: dev-full
+  starters:
+    - persistence-postgres
+    - checkpoint-postgres
+    - model-openai-compatible
+    - cache-redis
+    - rate-limit-redis
+  runtime:
+    database_url:
+      env: GAIA_POSTGRES_URL
+    environment: sandbox
+    write_mode: approval_required
+    execution:
+      provider: temporal
+      server_address: temporal:7233
+      namespace: gaia-dev-full
+      task_queue: gaia-hr-dev-full
+      tls_enabled: false
+  stores:
+    operational:
+      provider: postgres
+      auto_create: false
+      pool_size: 5
+      max_overflow: 10
+    checkpoint:
+      provider: postgres
+      auto_setup: true
+      pool_min_size: 1
+      pool_max_size: 5
+  redis:
+    url:
+      env: GAIA_REDIS_URL
+  cache:
+    provider: redis
+  rate_limit:
+    provider: redis
+  model:
+    provider: openai-compatible
+    model_id: deepseek-chat
+    base_url: https://api.deepseek.com/v1
+    api_key:
+      env: DEEPSEEK_API_KEY
+    timeout_seconds: 60
+  observability:
+    provider: langfuse
+    base_url: http://langfuse-web:3000
+    public_key:
+      env: LANGFUSE_PUBLIC_KEY
+    secret_key:
+      env: LANGFUSE_SECRET_KEY
+    environment: dev-full
+    sample_rate: 1.0

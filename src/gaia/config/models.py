@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Mapping
 from enum import StrEnum
 from typing import Annotated, Any, Literal
 
@@ -52,17 +53,44 @@ class ApplicationSettings(StrictModel):
     version: str = "0.1.0"
 
 
+class PolicyOverrideSettings(StrictModel):
+    """A config-driven, monotonic tightening of one scenario's `ExecutionPolicy`.
+
+    Every field here may only make the target policy *stricter* than the
+    `@scenario`-declared baseline -- never looser. See
+    `gaia.runtime.policy.apply_policy_override` for the enforcement and the
+    fingerprinted version evidence this produces. `None` (the default) means
+    "leave this dimension alone"; `deny_tools` defaults to empty for the same
+    reason.
+    """
+
+    write_mode: WriteMode | None = None
+    max_steps: int | None = None
+    max_model_calls: int | None = None
+    max_duration_seconds: int | None = None
+    deny_tools: tuple[str, ...] = ()
+
+
 class RuntimeSettings(StrictModel):
     database_url: str | SecretRef = "sqlite+aiosqlite:///./var/gaia.db"
+    execution: RuntimeExecutionSettings = Field(
+        default_factory=lambda: RuntimeExecutionSettings()
+    )
     max_steps: int = Field(default=32, ge=1)
     timeout_seconds: int = Field(default=120, ge=1)
     environment: RunMode = RunMode.MOCK
     write_mode: WriteMode | None = None
+    policy_overrides: Mapping[str, PolicyOverrideSettings] = {}
 
     @model_validator(mode="after")
-    def sandbox_never_enables_unattended_writes(self) -> RuntimeSettings:
+    def enforce_environment_execution_boundary(self) -> RuntimeSettings:
         if self.environment == RunMode.SANDBOX and self.write_mode == WriteMode.ENABLED:
             raise ValueError("sandbox runtime.write_mode cannot be enabled")
+        if self.environment == RunMode.CUSTOMER and self.execution.provider != "temporal":
+            raise ValueError(
+                "customer runtime requires runtime.execution.provider=temporal; "
+                "Gaia production execution is durable by design"
+            )
         return self
 
     def effective_write_mode(self) -> WriteMode:
@@ -73,6 +101,31 @@ class RuntimeSettings(StrictModel):
             RunMode.SANDBOX: WriteMode.APPROVAL_REQUIRED,
             RunMode.CUSTOMER: WriteMode.DISABLED,
         }[self.environment]
+
+class RuntimeExecutionSettings(StrictModel):
+    provider: Literal["in_process", "temporal"] = "in_process"
+    namespace: str = "default"
+    task_queue: str = "gaia-runtime"
+    server_address: str = "127.0.0.1:7233"
+    tls_enabled: bool = False
+    task_timeout_seconds: int = Field(default=30, ge=1, le=3600)
+    max_concurrent_workflows: int = Field(default=200, ge=1, le=1000)
+    # Set both to run Workers under pinned deployment versioning: an in-flight
+    # Run stays on the build it started on, so deploying a changed Workflow only
+    # affects new Runs. Left unset, every Worker serves every Run and an
+    # incompatible Workflow change strands Runs that are already in flight --
+    # including any parked on a HumanGate, whose default TTL is a full day.
+    deployment_name: str | None = Field(default=None, min_length=1)
+    build_id: str | None = Field(default=None, min_length=1)
+
+    @model_validator(mode="after")
+    def deployment_versioning_is_all_or_nothing(self) -> RuntimeExecutionSettings:
+        if (self.deployment_name is None) != (self.build_id is None):
+            raise ValueError(
+                "runtime.execution.deployment_name and build_id must be set together; "
+                "one without the other silently disables pinned versioning"
+            )
+        return self
 
 
 class OperationalStoreSettings(StrictModel):
@@ -211,14 +264,47 @@ class EvaluationSettings(StrictModel):
     cases: str | None = None
 
 
+class ObservabilitySettings(StrictModel):
+    """Select the external trace backend without moving execution truth into Gaia."""
+
+    provider: Literal["local", "langfuse"] = "local"
+    base_url: str = Field(default="http://localhost:3000", min_length=1)
+    public_key: SecretRef | None = None
+    secret_key: SecretRef | None = None
+    environment: str = Field(
+        default="development",
+        pattern=r"^[a-z0-9_-]{1,40}$",
+    )
+    sample_rate: float = Field(default=1.0, ge=0.0, le=1.0)
+
+    @model_validator(mode="after")
+    def langfuse_requires_credentials(self) -> ObservabilitySettings:
+        if self.environment.startswith("langfuse"):
+            raise ValueError("observability.environment cannot start with 'langfuse'")
+        if self.provider == "langfuse":
+            if self.public_key is None:
+                raise ValueError(
+                    "langfuse observability requires observability.public_key"
+                )
+            if self.secret_key is None:
+                raise ValueError(
+                    "langfuse observability requires observability.secret_key"
+                )
+        return self
+
+
 class PromptSettings(StrictModel):
     provider: Literal["disabled", "file", "postgres"] = "disabled"
     root: str = "prompts"
 
 
 class RagSettings(StrictModel):
-    provider: Literal["disabled", "postgres"] = "disabled"
+    provider: Literal["disabled", "postgres", "external-http"] = "disabled"
     root: str = "documents"
+    base_url: str | None = None
+    endpoint: str = Field(default="/v1/retrieve", pattern=r"^/[^\s]*$")
+    api_key: SecretRef | None = None
+    timeout_seconds: int = Field(default=10, ge=1, le=120)
     namespace_prefix: str = Field(
         default="gaia-rag",
         min_length=1,
@@ -233,6 +319,99 @@ class RagSettings(StrictModel):
     def validate_chunk_overlap(self) -> RagSettings:
         if self.chunk_overlap >= self.chunk_size:
             raise ValueError("rag chunk_overlap must be smaller than chunk_size")
+        if self.provider == "external-http" and self.base_url is None:
+            raise ValueError("external-http rag requires rag.base_url")
+        return self
+
+
+class ScenarioSettings(StrictModel):
+    """Declarative discovery of @scenario / @read_tool / @write_tool modules."""
+
+    modules: tuple[str, ...] = ()
+
+
+# JWT algorithms this framework will ever configure for OIDC token verification.
+# Deliberately asymmetric-only: the signing key (private) and verification key
+# (public, published as JWKS) differ, so a caller who only has the public JWKS
+# can never forge a signature. Symmetric algorithms (`HS*`) are excluded on
+# purpose -- if they were allowed, an attacker who knows the IdP's public JWKS
+# (published, not secret) could sign their own token with `alg=HS256` using
+# that public key *as* the HMAC secret, and a verifier that naively looked up
+# "the key for this alg" would accept it. This is the classic RS256/HS256 "key
+# confusion" attack. `none` is excluded for the equally classic reason: it
+# requires no signature at all. See `gaia.integrations.oidc.JwtAuthnProvider`
+# for where this allowlist is enforced (never derived from the token itself).
+OIDC_ASYMMETRIC_ALGORITHMS: frozenset[str] = frozenset(
+    {
+        "RS256",
+        "RS384",
+        "RS512",
+        "PS256",
+        "PS384",
+        "PS512",
+        "ES256",
+        "ES256K",
+        "ES384",
+        "ES512",
+    }
+)
+
+
+class ClaimMappingSettings(StrictModel):
+    """Where in a validated JWT's claims to find identity fields.
+
+    Every IdP places these in a different spot -- Keycloak nests roles under
+    `realm_access.roles`, Entra ID uses a flat `groups` claim, Okta typically
+    uses a custom claim name entirely. Dotted paths (`"a.b.c"`) address nested
+    claims; a single segment (`"groups"`) addresses a top-level claim. There is
+    deliberately no framework-wide default that assumes one vendor's layout.
+    """
+
+    subject: str = Field(default="sub", min_length=1)
+    organization: str = Field(default="org_id", min_length=1)
+    roles: str = Field(default="roles", min_length=1)
+
+
+class AuthnSettings(StrictModel):
+    """Config-driven construction of the request-level `AuthnProvider`.
+
+    `provider: "disabled"` (the default) leaves `create_app` to build its own
+    default the way it always has (`ApiKeyAuthnProvider`, or whatever is
+    passed explicitly via `create_app(authn=...)`) -- this section changes
+    nothing until an application opts in. `provider: "oidc"` builds a
+    `gaia.integrations.oidc.JwtAuthnProvider` from the fields below: Gaia
+    validates the token's signature and standard claims and maps claims to a
+    `UserIdentity`; it does not issue tokens, manage users, or grant roles --
+    that is the IdP's job (Keycloak, Okta, Entra ID, Ping, ...).
+    """
+
+    provider: Literal["disabled", "oidc"] = "disabled"
+    issuer: str | None = None
+    audience: str | None = None
+    jwks_url: str | None = None
+    leeway_seconds: int = Field(default=30, ge=0, le=300)
+    algorithms: tuple[str, ...] = ("RS256",)
+    jwks_cache_ttl_seconds: int = Field(default=300, ge=1, le=86400)
+    jwks_fetch_backoff_seconds: int = Field(default=30, ge=1, le=3600)
+    claims: ClaimMappingSettings = Field(default_factory=ClaimMappingSettings)
+
+    @model_validator(mode="after")
+    def validate_oidc(self) -> AuthnSettings:
+        if self.provider == "oidc":
+            if not self.issuer:
+                raise ValueError("oidc authn requires authn.issuer")
+            if not self.audience:
+                raise ValueError("oidc authn requires authn.audience")
+            if not self.algorithms:
+                raise ValueError("oidc authn requires at least one entry in authn.algorithms")
+        for algorithm in self.algorithms:
+            if algorithm not in OIDC_ASYMMETRIC_ALGORITHMS:
+                raise ValueError(
+                    "authn.algorithms must be asymmetric-signature algorithms "
+                    f"({sorted(OIDC_ASYMMETRIC_ALGORITHMS)}); rejected {algorithm!r} "
+                    "(symmetric algorithms and 'none' let a caller forge or skip "
+                    "the signature -- see OIDC_ASYMMETRIC_ALGORITHMS)"
+                )
         return self
 
 
@@ -261,6 +440,9 @@ class GaiaApplicationConfig(StrictModel):
     prompt: PromptSettings = Field(default_factory=PromptSettings)
     rag: RagSettings = Field(default_factory=RagSettings)
     evaluation: EvaluationSettings = Field(default_factory=EvaluationSettings)
+    observability: ObservabilitySettings = Field(default_factory=ObservabilitySettings)
+    scenarios: ScenarioSettings = Field(default_factory=ScenarioSettings)
+    authn: AuthnSettings = Field(default_factory=AuthnSettings)
 
     @model_validator(mode="after")
     def validate_embedding_dimensions(self) -> GaiaApplicationConfig:
@@ -307,6 +489,16 @@ class GaiaApplicationConfig(StrictModel):
             value["model"]["api_key"] = self.model.api_key.redacted()
         if self.embedding.api_key:
             value["embedding"]["api_key"] = self.embedding.api_key.redacted()
+        if self.rag.api_key:
+            value["rag"]["api_key"] = self.rag.api_key.redacted()
+        if self.observability.public_key:
+            value["observability"]["public_key"] = (
+                self.observability.public_key.redacted()
+            )
+        if self.observability.secret_key:
+            value["observability"]["secret_key"] = (
+                self.observability.secret_key.redacted()
+            )
         return value
 
     def stable_hash(self) -> str:
