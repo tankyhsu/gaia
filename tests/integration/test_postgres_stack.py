@@ -394,6 +394,11 @@ async def test_postgres_memory_filter_vector_search_and_restart() -> None:
 
 
 
+@pytest.mark.external
+@pytest.mark.skipif(
+    not RUN_EXTERNAL_TESTS or not os.environ.get("SILICONFLOW_API_KEY"),
+    reason="RUN_EXTERNAL_TESTS=1 and SILICONFLOW_API_KEY are required",
+)
 async def test_postgres_pgvector_with_configured_siliconflow_embedding() -> None:
     payload = _config().model_dump(mode="python")
     payload["embedding"] = {
