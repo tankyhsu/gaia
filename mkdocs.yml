@@ -27,10 +27,11 @@ theme:
 
 nav:
   - Gaia 概览: index.md
+  - 为什么需要 Gaia: why-controlled-execution.md
   - 开始:
       - 从三个 Case 理解 Gaia: try-it.md
       - 选择运行与部署方式: runtime-profiles.md
-      - 20 分钟走通 Gaia: getting-started.md
+      - 运行起来: getting-started.md
       - 构建一个 Demo: demo.md
       - HR 参考应用: showcase.md
   - 框架:
