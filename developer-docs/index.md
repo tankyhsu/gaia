@@ -64,7 +64,7 @@ Gaia 提供的是这些部件之间的受控运行底座。
 
 ### 我要先把它运行起来
 
-进入 [20 分钟走通 Gaia](getting-started.md)，运行参考环境并检查三种受控结果。
+进入 [运行起来](getting-started.md)，运行参考环境并检查三种受控结果。
 如果你在区分 `make demo`、日常开发、`dev-full`、Compose 验收和 Helm 生产，先看
 [选择运行与部署方式](runtime-profiles.md)。
 
