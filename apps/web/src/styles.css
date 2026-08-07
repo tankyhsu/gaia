@@ -59,6 +59,12 @@ button:disabled {
   font-weight: 700;
 }
 
+.console-brand-mark {
+  width: 26px;
+  height: 26px;
+  flex: 0 0 auto;
+}
+
 .console-brand-copy {
   display: grid;
   line-height: 1.1;

@@ -952,6 +952,7 @@ test("quick start is skippable and overview remains the daily status page", asyn
   await fixtureApi(page);
   await page.goto("/");
 
+  await expect(page.getByRole("img", { name: "Gaia 标志" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Gaia" })).toBeVisible();
   await expect(page.getByText("从一个接近你业务想法的场景开始", { exact: false })).toBeVisible();
   await expect(page.getByRole("heading", { name: "你想先解决哪一类业务问题？" })).toBeVisible();

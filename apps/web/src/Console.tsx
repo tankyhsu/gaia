@@ -264,7 +264,7 @@ export function Console() {
     <div className="console-shell">
       <aside className="console-sidebar">
         <div className="console-brand">
-          <Boxes size={19} />
+          <img className="console-brand-mark" src="/gaia-mark.svg" alt="Gaia 标志" />
           <div className="console-brand-copy">
             <strong>Gaia</strong>
             <small>{DEMO_MODE ? "Control Center" : "Dev Console"}</small>

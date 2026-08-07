@@ -4,6 +4,10 @@ All notable user-visible Gaia changes are recorded here.
 
 ## Unreleased
 
+- Add a shared two-color vector mark to the repository homepage, MkDocs header and favicon, and
+  Dev Console navigation and favicon, replacing the Console's generic package icon with Gaia's own
+  controlled-execution identity.
+
 - Publish the verified MkDocs developer site to GitHub Pages after changes reach `main`, using a
   dedicated artifact and least-privilege deployment job; expose the canonical documentation and
   repository URLs in MkDocs while keeping pull-request workflows read-only.

@@ -10,6 +10,8 @@ site_dir: site
 theme:
   name: material
   language: zh
+  logo: assets/gaia-mark.svg
+  favicon: assets/gaia-mark.svg
   features:
     - navigation.tabs
     - navigation.tabs.sticky

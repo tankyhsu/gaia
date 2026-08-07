@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
+  <title id="title">Gaia</title>
+  <desc id="desc">A jade G crossed by an amber control gate.</desc>
+  <path
+    fill="#178F73"
+    d="M76 24h104c28.7 0 52 23.3 52 52v12h-48V76c0-2.2-1.8-4-4-4H76c-2.2 0-4 1.8-4 4v104c0 2.2 1.8 4 4 4h104c2.2 0 4-1.8 4-4v-36h48v36c0 28.7-23.3 52-52 52H76c-28.7 0-52-23.3-52-52V76c0-28.7 23.3-52 52-52Z"
+  />
+  <path
+    fill="#E5A13A"
+    d="M128 112h92c6.6 0 12 5.4 12 12v20H128c-6.6 0-12-5.4-12-12v-8c0-6.6 5.4-12 12-12Z"
+  />
+</svg>

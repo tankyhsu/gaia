@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="developer-docs/assets/gaia-mark.svg" alt="Gaia 标志" width="112" />
+
 # Gaia
 
 ### 企业 Agent 的受控执行与交付底座
