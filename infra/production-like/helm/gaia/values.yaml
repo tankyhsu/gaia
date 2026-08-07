@@ -30,7 +30,8 @@ console:
 
 api:
   replicaCount: 2
-  appFactory: examples.controlled_task.app:create_app
+  # Required: supplied by the application release, not by the Gaia framework image.
+  appFactory: ""
   service:
     type: ClusterIP
     port: 8000
@@ -44,7 +45,8 @@ api:
 
 worker:
   replicaCount: 2
-  appFactory: examples.controlled_task.app:create_app
+  # Required: normally the same composition factory used by the API.
+  appFactory: ""
   resources:
     requests:
       cpu: 250m
@@ -71,16 +73,12 @@ gaia:
   config:
     gaia:
       application:
-        name: controlled-task-production-like
+        name: gaia-application
         version: 1.0.0
       profile: production-like
       starters:
         - core-runtime
         - model-mock
-        - context-mock
-        - policy-controlled
-        - evaluation-fixtures
-        - import: examples.controlled_task.starter:STARTER
       runtime:
         database_url:
           env: GAIA_POSTGRES_URL
@@ -108,11 +106,6 @@ gaia:
         model_id: deterministic-mock
       workflow:
         provider: langgraph
-      context:
-        provider: mock
-      policy:
-        provider: controlled
-        human_gate_ttl_seconds: 3600
       observability:
         provider: langfuse
         base_url: http://langfuse-web.langfuse.svc.cluster.local:3000
@@ -122,8 +115,6 @@ gaia:
           env: LANGFUSE_SECRET_KEY
         environment: production-like
         sample_rate: 1.0
-      evaluation:
-        cases: ./examples/controlled_task/specs/acceptance-cases.json
 
 extraEnv: []
 extraEnvFrom: []

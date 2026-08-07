@@ -42,6 +42,7 @@ services:
         condition: service_completed_successfully
     volumes:
       - ${GAIA_CONFIG_FILE:?GAIA_CONFIG_FILE is required}:/etc/gaia/gaia.yaml:ro
+    command: ["uvicorn", "${GAIA_APP_FACTORY:?GAIA_APP_FACTORY is required}", "--factory", "--host", "0.0.0.0", "--port", "8000"]
   api-b:
     environment:
       GAIA_CONFIG_PATH: /etc/gaia/gaia.yaml
@@ -50,6 +51,7 @@ services:
         condition: service_completed_successfully
     volumes:
       - ${GAIA_CONFIG_FILE:?GAIA_CONFIG_FILE is required}:/etc/gaia/gaia.yaml:ro
+    command: ["uvicorn", "${GAIA_APP_FACTORY:?GAIA_APP_FACTORY is required}", "--factory", "--host", "0.0.0.0", "--port", "8000"]
   worker-a:
     environment:
       GAIA_CONFIG_PATH: /etc/gaia/gaia.yaml
@@ -58,7 +60,7 @@ services:
         condition: service_completed_successfully
     volumes:
       - ${GAIA_CONFIG_FILE:?GAIA_CONFIG_FILE is required}:/etc/gaia/gaia.yaml:ro
-    command: ["gaia", "worker", "--config", "/etc/gaia/gaia.yaml", "--app", "examples.controlled_task.app:create_app"]
+    command: ["gaia", "worker", "--config", "/etc/gaia/gaia.yaml", "--app", "${GAIA_APP_FACTORY:?GAIA_APP_FACTORY is required}"]
   worker-b:
     environment:
       GAIA_CONFIG_PATH: /etc/gaia/gaia.yaml
@@ -67,4 +69,4 @@ services:
         condition: service_completed_successfully
     volumes:
       - ${GAIA_CONFIG_FILE:?GAIA_CONFIG_FILE is required}:/etc/gaia/gaia.yaml:ro
-    command: ["gaia", "worker", "--config", "/etc/gaia/gaia.yaml", "--app", "examples.controlled_task.app:create_app"]
+    command: ["gaia", "worker", "--config", "/etc/gaia/gaia.yaml", "--app", "${GAIA_APP_FACTORY:?GAIA_APP_FACTORY is required}"]

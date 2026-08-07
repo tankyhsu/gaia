@@ -31,6 +31,7 @@ def test_production_like_compose_has_independent_replicas_and_data_owners() -> N
     } <= services.keys()
     assert services["worker-a"]["command"] == services["worker-b"]["command"]
     assert services["api-a"]["command"] == services["api-b"]["command"]
+    assert services["api-a"]["environment"]["PYTHONPATH"] == "/app"
     assert services["temporal"]["image"] == "temporalio/server:1.31.2"
     assert services["temporal"]["environment"]["DYNAMIC_CONFIG_FILE_PATH"] == (
         "config/dynamicconfig/production-like.yaml"
@@ -92,3 +93,5 @@ def test_external_compose_overlay_makes_platform_dependencies_optional() -> None
     assert 'profiles: ["managed-temporal"]' in source
     assert 'profiles: ["managed-langfuse"]' in source
     assert "GAIA_CONFIG_FILE is required" in source
+    assert "GAIA_APP_FACTORY is required" in source
+    assert "examples." not in source

@@ -1,4 +1,4 @@
-"""Export the public Gaia OpenAPI document from the reference application."""
+"""Export the application-neutral public Gaia OpenAPI document."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from typing import Any, cast
 
-from examples.controlled_task.app import create_app
+from gaia.api.app import create_app
 
 ROOT = Path(__file__).parents[1]
 PUBLIC_ROUTES = {

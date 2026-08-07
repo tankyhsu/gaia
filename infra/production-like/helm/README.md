@@ -9,6 +9,11 @@ This Helm chart deploys the workloads Gaia owns:
 - optional developer Console Deployment and Service
 - optional Ingress, HPA, PodDisruptionBudget, and NetworkPolicy
 
+It deliberately does not select an application. Set both `api.appFactory` and
+`worker.appFactory` to the application-owned ASGI composition factory, and replace
+`gaia.config` with that application's reviewed configuration. An absent factory is a
+render-time error rather than an implicit example deployment.
+
 PostgreSQL, Redis, Temporal, and Langfuse are independent stateful platforms.
 Production environments should operate them through managed services, database
 operators, or their upstream charts rather than hiding their lifecycle inside
@@ -84,7 +89,9 @@ HA operators, external Secrets, TLS, backups, and production capacity values.
   chart-managed PostgreSQL, ClickHouse, Redis, and object storage.
 - Gaia PostgreSQL: use a managed PostgreSQL service or your platform's
   PostgreSQL operator.
-- Redis is optional for the current production-like controlled-task profile.
+- Redis is optional for the production-like reference profile. The application factory and
+  application-owned configuration must be supplied explicitly; the Chart does not install a
+  built-in example business.
 
 Create the namespace and its externally managed Secret before installing Gaia:
 
@@ -125,7 +132,7 @@ docker build -t gaia-console:production-like ./apps/web
 ```
 
 When the external dependencies already exist, use the single-replica Gaia-only
-override:
+override together with application values that provide both factories and config:
 
 ```bash
 helm upgrade --install gaia-production-like \
@@ -133,6 +140,7 @@ helm upgrade --install gaia-production-like \
   --namespace gaia \
   --create-namespace \
   --values ./infra/production-like/helm/gaia/values-orbstack.yaml \
+  --values /path/to/my-application-values.yaml \
   --wait \
   --timeout 10m
 ```

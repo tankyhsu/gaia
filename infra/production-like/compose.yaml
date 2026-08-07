@@ -7,6 +7,7 @@ x-gaia-environment: &gaia-environment
   GAIA_DATABASE_URL: postgresql://gaia:${GAIA_POSTGRES_PASSWORD:-gaia-production-like-password}@gaia-postgres:5432/gaia
   GAIA_PROJECT_ROOT: /app
   GAIA_DEVTOOLS_ENABLED: "false"
+  PYTHONPATH: /app
   LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-pk-lf-gaia-production-like}
   LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-sk-lf-gaia-production-like}
 
@@ -280,7 +281,7 @@ services:
 
   api-a:
     <<: *gaia-service
-    command: ["uvicorn", "examples.controlled_task.app:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000"]
+    command: ["uvicorn", "examples.function_task.app:build", "--factory", "--host", "0.0.0.0", "--port", "8000"]
     healthcheck: &gaia-api-health
       test:
         - CMD
@@ -293,7 +294,7 @@ services:
 
   api-b:
     <<: *gaia-service
-    command: ["uvicorn", "examples.controlled_task.app:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000"]
+    command: ["uvicorn", "examples.function_task.app:build", "--factory", "--host", "0.0.0.0", "--port", "8000"]
     healthcheck: *gaia-api-health
 
   worker-a:
@@ -304,7 +305,7 @@ services:
       - --config
       - /app/infra/production-like/gaia.yaml
       - --app
-      - examples.controlled_task.app:create_app
+      - examples.function_task.app:build
 
   worker-b:
     <<: *gaia-service
@@ -314,7 +315,7 @@ services:
       - --config
       - /app/infra/production-like/gaia.yaml
       - --app
-      - examples.controlled_task.app:create_app
+      - examples.function_task.app:build
 
   gateway:
     image: nginx:1.27-alpine

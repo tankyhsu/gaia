@@ -42,7 +42,7 @@ spec:
             - --config
             - /etc/gaia/gaia.yaml
             - --app
-            - {{ .Values.worker.appFactory }}
+            - {{ required "worker.appFactory must name the application ASGI factory" .Values.worker.appFactory | quote }}
           env:
             {{- include "gaia.commonEnv" . | nindent 12 }}
           {{- with .Values.extraEnvFrom }}

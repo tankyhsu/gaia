@@ -715,7 +715,7 @@ def test_worker_loads_application_composition_and_restores_environment(
                 "--config",
                 str(config),
                 "--app",
-                "examples.controlled_task.app:create_app",
+                "my_application.app:create_app",
             ],
             worker_runner=worker_runner,
             output=output.append,
@@ -724,7 +724,7 @@ def test_worker_loads_application_composition_and_restores_environment(
     )
     assert calls == [
         (
-            "examples.controlled_task.app:create_app",
+            "my_application.app:create_app",
             str(config.resolve()),
             "original",
         )
@@ -750,7 +750,7 @@ def test_worker_reports_runner_failure(tmp_path: Path) -> None:
                 "--config",
                 str(config),
                 "--app",
-                "examples.controlled_task.app:create_app",
+                "my_application.app:create_app",
             ],
             worker_runner=worker_runner,
             output=output.append,

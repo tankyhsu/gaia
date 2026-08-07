@@ -1,5 +1,6 @@
 import ast
 import importlib.util
+import tomllib
 from pathlib import Path
 
 import yaml
@@ -135,6 +136,39 @@ def test_framework_source_has_no_reference_application_constants() -> None:
         text = path.read_text()
         assert not any(value in text for value in forbidden), (
             f"{path.relative_to(ROOT)} contains a reference application constant"
+        )
+
+
+def test_framework_distribution_and_delivery_defaults_do_not_select_controlled_task() -> None:
+    pyproject = tomllib.loads((PROJECT_ROOT / "pyproject.toml").read_text())
+    packages = pyproject["tool"]["hatch"]["build"]["targets"]["wheel"]["packages"]
+
+    assert packages == ["src/gaia"]
+
+    delivery_paths = (
+        PROJECT_ROOT / "Dockerfile",
+        PROJECT_ROOT / "Makefile",
+        PROJECT_ROOT / "scripts" / "demo.py",
+        PROJECT_ROOT / "scripts" / "export_openapi.py",
+        PROJECT_ROOT / "scripts" / "smoke.py",
+        PROJECT_ROOT / "infra" / "dev-full" / "compose.yaml",
+        PROJECT_ROOT / "infra" / "dev-full" / "gaia.yaml",
+        PROJECT_ROOT / "infra" / "production-like" / "compose.yaml",
+        PROJECT_ROOT / "infra" / "production-like" / "compose.external.yaml",
+        PROJECT_ROOT / "infra" / "production-like" / "gaia.yaml",
+        PROJECT_ROOT / "infra" / "production-like" / "helm" / "gaia" / "values.yaml",
+        PROJECT_ROOT
+        / "infra"
+        / "production-like"
+        / "helm"
+        / "gaia"
+        / "values-external.example.yaml",
+    )
+    forbidden = ("controlled-task", "controlled_task")
+    for path in delivery_paths:
+        source = path.read_text()
+        assert not any(value in source for value in forbidden), (
+            f"{path.relative_to(PROJECT_ROOT)} selects the acceptance-only application"
         )
 
 

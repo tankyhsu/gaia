@@ -4,6 +4,9 @@
 
 > 一段普通 Python 业务函数，怎样在不自己实现审批、恢复和审计的情况下，变成受控运行的 Gaia 场景？
 
+它也是 Gaia 仓库自己的日常开发和独立 Demo 默认应用。Gaia wheel 不打包本目录；客户应用通过
+`gaia init` 生成独立工程，并用同一组公开 API 建立自己的 Scenario 与 Tool。
+
 ## 先看业务链，不看类型
 
 ```mermaid

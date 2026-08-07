@@ -14,9 +14,9 @@ This script:
      ``no such column: runs.pending_result_json`` error this script replaces.
   2. Migrates that database with Alembic (the same migration chain
      production uses -- not a schema shortcut).
-  3. Starts a disposable Temporal development server and the
-     ``controlled-task`` application's real Worker.
-  4. Starts the ``controlled-task`` reference API against that database.
+  3. Starts a disposable Temporal development server and the minimal
+     ``function_task`` application's real Worker.
+  4. Starts the ``function_task`` reference API against that database.
   5. Seeds a handful of runs worth looking at: a controlled write that went
      through human approval and completed, one a human approver refused, and
      one refused by policy before a human was ever involved.
@@ -128,7 +128,7 @@ class DemoSeedError(DemoError):
 
 @dataclass(frozen=True)
 class SeedRun:
-    """One representative Run to create against the live `controlled-task` API."""
+    """One representative Run to create against the minimal reference API."""
 
     label: str
     scenario_id: str
@@ -153,37 +153,37 @@ class SeedOutcome:
 #   1. A high-risk write that a human approved, and that then completed.
 #   2. The same shape of write, refused by the human approver.
 #   3. A read refused by policy before any human was ever asked.
-# All three exercise the `controlled-task` reference scenario shipped at
-# `examples/controlled_task/` (also used by `make dev-api`), using distinct
-# resources so seeding one run cannot change the outcome of another.
+# All three exercise public application-authoring contracts from
+# `examples/function_task/` (also used by `make dev-api`). The legacy synthetic
+# acceptance app is intentionally not part of the product demo.
 SEED_PLAN: tuple[SeedRun, ...] = (
     SeedRun(
         label="controlled write, approved by a human and completed",
-        scenario_id="controlled-task",
-        text="pause res-001 because scheduled maintenance window",
+        scenario_id="function_task.request_publish",
+        text="demo-approved-widget",
         user_id="demo-operator",
-        organization="org-alpha",
-        roles=("operator",),
+        organization="demo",
+        roles=("user",),
         decision="approved",
         expected_status="succeeded",
     ),
     SeedRun(
         label="controlled write, refused by a human approver",
-        scenario_id="controlled-task",
-        text="activate res-002 because customer requested early reactivation",
+        scenario_id="function_task.request_publish",
+        text="demo-rejected-widget",
         user_id="demo-operator",
-        organization="org-alpha",
-        roles=("operator",),
+        organization="demo",
+        roles=("user",),
         decision="rejected",
         expected_status="blocked",
     ),
     SeedRun(
-        label="read refused by cross-organization policy, no human involved",
-        scenario_id="controlled-task",
-        text="inspect res-003",
+        label="request refused by policy, no human involved",
+        scenario_id="function_task.reject_request",
+        text="demonstrate a policy refusal",
         user_id="demo-reader",
-        organization="org-alpha",
-        roles=("reader",),
+        organization="demo",
+        roles=("user",),
         decision=None,
         expected_status="blocked",
     ),
@@ -223,8 +223,8 @@ def seed_demo_runs(
             raise DemoSeedError(
                 f"seeding '{item.label}' failed to create a run: "
                 f"HTTP {response.status_code} {response.text}",
-                "The controlled-task reference scenario may have changed shape; compare "
-                "scripts/demo.py's SEED_PLAN against examples/controlled_task/workflow.py.",
+                "The function-task reference application may have changed shape; compare "
+                "scripts/demo.py's SEED_PLAN against examples/function_task/flows.py.",
             )
         run = response.json()
         run_id = run["run_id"]
@@ -240,7 +240,7 @@ def seed_demo_runs(
                 raise DemoSeedError(
                     f"seeding '{item.label}' expected a pending human gate but none was created",
                     "Compare scripts/demo.py's SEED_PLAN against "
-                    "examples/controlled_task/workflow.py -- the write may no longer require "
+                    "examples/function_task/flows.py -- the write may no longer require "
                     "approval for this resource and target status.",
                 )
             decision_response = client.post(
@@ -270,7 +270,7 @@ def seed_demo_runs(
             raise DemoSeedError(
                 f"seeding '{item.label}' produced status '{run['status']}', "
                 f"expected '{item.expected_status}'",
-                "The controlled-task reference scenario may have changed shape; run "
+                "The function-task reference application may have changed shape; run "
                 "`uv run pytest tests/integration/test_demo.py -q` for a narrower failure.",
             )
         outcomes.append(SeedOutcome(plan=item, run_id=run["run_id"], status=run["status"]))
@@ -370,6 +370,15 @@ def _demo_service_environment() -> dict[str, str]:
     env.setdefault("GAIA_DEVTOOLS_ENABLED", "true")
     env["GAIA_PROJECT_ROOT"] = str(ROOT)
     env["GAIA_DATABASE_URL"] = DEMO_DATABASE_URL
+    # ``gaia`` is an installed console script, so Python otherwise starts its
+    # import search at ``.venv/bin`` instead of this repository. The demo app
+    # intentionally remains repository-only and must be assembled explicitly.
+    existing_python_path = env.get("PYTHONPATH")
+    env["PYTHONPATH"] = (
+        f"{ROOT}{os.pathsep}{existing_python_path}"
+        if existing_python_path
+        else str(ROOT)
+    )
     return env
 
 
@@ -382,9 +391,9 @@ def _start_worker() -> subprocess.Popen[bytes]:
                 "gaia",
                 "worker",
                 "--config",
-                "examples/controlled_task/gaia.yaml",
+                "examples/function_task/gaia.yaml",
                 "--app",
-                "examples.controlled_task.app:create_app",
+                "examples.function_task.app:build",
             ],
             cwd=ROOT,
             env=_demo_service_environment(),
@@ -404,7 +413,7 @@ def _start_api() -> subprocess.Popen[bytes]:
                 "uv",
                 "run",
                 "uvicorn",
-                "examples.controlled_task.app:create_app",
+                "examples.function_task.app:build",
                 "--factory",
                 "--host",
                 DEMO_API_HOST,
@@ -757,7 +766,7 @@ def main() -> int:
             timeout_seconds=60,
         )
 
-        print("[demo] starting the controlled-task Temporal Worker ...")
+        print("[demo] starting the minimal function-task Temporal Worker ...")
         worker_process = _start_worker()
         processes.append(worker_process)
         _ensure_process_stays_running(
@@ -822,8 +831,8 @@ def main() -> int:
                 what="the HR showcase backend",
                 timeout_seconds=60,
             )
-            # Its own task queue, so Temporal never hands controlled-task work
-            # to a Worker that has none of those scenarios registered.
+            # Its own task queue, so Temporal never hands function-task work to
+            # a Worker that has none of those scenarios registered.
             hr_worker = _start_hr_worker()
             processes.append(hr_worker)
             hr_frontend = _start_hr_frontend(

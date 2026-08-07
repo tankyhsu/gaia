@@ -109,6 +109,17 @@ helm upgrade --install langfuse langfuse/langfuse \
   --wait \
   --timeout 20m
 
+# The MinIO subchart omits ``spec.replicas`` for its standalone Deployment.
+# After operators scale the local stack to zero, Helm's three-way merge keeps
+# that live value and incorrectly considers 0/0 ready. Restore the one local
+# replica explicitly so OTLP ingestion has object storage before verification.
+kubectl scale deployment/langfuse-s3 \
+  --namespace "$langfuse_namespace" \
+  --replicas=1
+kubectl rollout status deployment/langfuse-s3 \
+  --namespace "$langfuse_namespace" \
+  --timeout=10m
+
 if [[ -z "${DEEPSEEK_API_KEY:-}" ]]; then
   cat <<'EOF'
 Platform deployment is ready: data services, Temporal, and Langfuse are running.

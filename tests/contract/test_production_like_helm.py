@@ -22,6 +22,8 @@ def test_production_like_chart_has_owned_workloads_and_external_secret_boundary(
     assert chart["type"] == "application"
     assert values["secrets"]["existingSecret"] == "gaia-production-like-secrets"
     assert values["console"]["enabled"] is False
+    assert values["api"]["appFactory"] == ""
+    assert values["worker"]["appFactory"] == ""
     assert values["gaia"]["config"]["gaia"]["runtime"]["execution"]["provider"] == (
         "temporal"
     )
@@ -39,6 +41,11 @@ def test_production_like_chart_has_owned_workloads_and_external_secret_boundary(
         "kind: Secret" in path.read_text()
         for path in (CHART / "templates").glob("*.yaml")
     )
+
+    api_template = (CHART / "templates" / "api.yaml").read_text()
+    worker_template = (CHART / "templates" / "worker.yaml").read_text()
+    assert 'required "api.appFactory must name the application ASGI factory"' in api_template
+    assert 'required "worker.appFactory must name the application ASGI factory"' in worker_template
 
 
 def test_migration_and_temporal_bootstrap_gate_rollout() -> None:
@@ -59,6 +66,8 @@ def test_external_values_leave_ui_and_platform_lifecycle_to_operator() -> None:
     observability = values["gaia"]["config"]["gaia"]["observability"]
 
     assert values["console"]["enabled"] is False
+    assert values["api"]["appFactory"] == "my_application.app:create_app"
+    assert values["worker"]["appFactory"] == "my_application.app:create_app"
     assert values["ingress"]["enabled"] is False
     assert values["temporalBootstrap"]["enabled"] is False
     assert execution["server_address"] == "temporal.platform.example:7233"
@@ -67,7 +76,17 @@ def test_external_values_leave_ui_and_platform_lifecycle_to_operator() -> None:
 
 @pytest.mark.skipif(shutil.which("helm") is None, reason="helm is not installed")
 def test_chart_lints_and_renders_with_orbstack_values() -> None:
-    subprocess.run(["helm", "lint", str(CHART)], check=True, capture_output=True)
+    application_values = [
+        "--set-string",
+        "api.appFactory=test_application.app:create_app",
+        "--set-string",
+        "worker.appFactory=test_application.app:create_app",
+    ]
+    subprocess.run(
+        ["helm", "lint", str(CHART), *application_values],
+        check=True,
+        capture_output=True,
+    )
     rendered = subprocess.run(
         [
             "helm",
@@ -78,6 +97,7 @@ def test_chart_lints_and_renders_with_orbstack_values() -> None:
             "gaia",
             "--values",
             str(CHART / "values-orbstack.yaml"),
+            *application_values,
         ],
         check=True,
         capture_output=True,
@@ -108,6 +128,11 @@ def test_complete_stack_pins_upstream_charts_and_uses_cluster_dns() -> None:
     assert 'LANGFUSE_CHART_VERSION="1.5.41"' in deploy
     assert "temporal/temporal" in deploy
     assert "langfuse/langfuse" in deploy
+    assert "kubectl scale deployment/langfuse-s3" in deploy
+    assert "kubectl rollout status deployment/langfuse-s3" in deploy
+    assert deploy.index("kubectl scale deployment/langfuse-s3") < deploy.index(
+        'if [[ -z "${DEEPSEEK_API_KEY:-}" ]]'
+    )
     assert temporal["server"]["config"]["persistence"]["defaultStore"] == "default"
     assert langfuse["postgresql"]["deploy"] is True
     assert langfuse["redis"]["deploy"] is True

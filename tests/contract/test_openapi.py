@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-from examples.controlled_task.app import create_app
+from gaia.api.app import create_app
 
 
 def test_fastapi_exposes_every_public_p0_operation() -> None:

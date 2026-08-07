@@ -20,7 +20,10 @@ _RESOURCES: dict[str, str] = {"widget-1": "draft"}
 _EXECUTIONS: dict[str, dict[str, Any]] = {}
 
 
-@read_tool("function_task.lookup_resource", allowed_environments=(RunMode.MOCK,))
+@read_tool(
+    "function_task.lookup_resource",
+    allowed_environments=(RunMode.MOCK, RunMode.SANDBOX),
+)
 async def lookup_resource(resource_id: str) -> dict[str, Any]:
     return {"resource_id": resource_id, "status": _RESOURCES.get(resource_id, "unknown")}
 
@@ -33,7 +36,7 @@ async def _reconcile_publish(*, idempotency_key: str) -> dict[str, Any] | None:
     "function_task.publish_resource",
     risk_level=RiskLevel.HIGH,
     reconcile=_reconcile_publish,
-    allowed_environments=(RunMode.MOCK,),
+    allowed_environments=(RunMode.MOCK, RunMode.SANDBOX),
 )
 async def publish_resource(resource_id: str, *, idempotency_key: str) -> dict[str, Any]:
     _RESOURCES[resource_id] = "published"

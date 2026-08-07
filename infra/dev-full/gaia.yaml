@@ -1,20 +1,17 @@
 gaia:
   application:
-    name: controlled-task-dev-full
+    name: function-task-dev-full
     version: 1.0.0
   profile: dev-full
   starters:
     - persistence-postgres
     - checkpoint-postgres
     - model-openai-compatible
-    - context-mock
-    - policy-controlled
-    - evaluation-fixtures
+    - scenario-runtime
     - cache-redis
     - rate-limit-redis
     - publisher-in-process
     - outbox-postgres
-    - import: examples.controlled_task.starter:STARTER
   runtime:
     database_url:
       env: GAIA_POSTGRES_URL
@@ -56,11 +53,10 @@ gaia:
     timeout_seconds: 60
   workflow:
     provider: langgraph
-  context:
-    provider: mock
-  policy:
-    provider: controlled
-    human_gate_ttl_seconds: 3600
+  scenarios:
+    modules:
+      - examples.function_task.flows
+      - examples.function_task.tools
   observability:
     provider: langfuse
     base_url: http://langfuse-web:3000
@@ -70,5 +66,3 @@ gaia:
       env: LANGFUSE_SECRET_KEY
     environment: dev-full
     sample_rate: 1.0
-  evaluation:
-    cases: /app/examples/controlled_task/specs/acceptance-cases.json

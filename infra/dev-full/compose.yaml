@@ -54,7 +54,7 @@ services:
       - --config
       - /app/infra/dev-full/gaia.yaml
       - --app
-      - examples.controlled_task.app:create_app
+      - examples.function_task.app:build
 
   worker-b:
     environment: *gaia-dev-full-environment
@@ -67,7 +67,7 @@ services:
       - --config
       - /app/infra/dev-full/gaia.yaml
       - --app
-      - examples.controlled_task.app:create_app
+      - examples.function_task.app:build
 
   hr-api:
     image: gaia-framework:production-like

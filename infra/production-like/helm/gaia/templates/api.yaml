@@ -37,7 +37,7 @@ spec:
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           command:
             - uvicorn
-            - {{ .Values.api.appFactory }}
+            - {{ required "api.appFactory must name the application ASGI factory" .Values.api.appFactory | quote }}
             - --factory
             - --host
             - 0.0.0.0

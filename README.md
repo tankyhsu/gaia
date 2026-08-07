@@ -199,6 +199,8 @@ Gaia 当前版本为 `0.1.0`，仍处于快速开发阶段。源码和 wheel 已
 - Gaia 面向需要受控写入、跨进程等待、恢复和审计的企业 Agent，不以简单聊天应用为目标。
 - customer 生产环境必须使用 Temporal 和 Helm/Kubernetes；`in_process` 不是生产选项。
 - Gaia 提供工程控制机制，但不构成任何合规认证，也不替代企业 IdP、审批制度或审计系统。
+- Gaia wheel 只包含框架包，不携带仓库示例或 Showcase；容器和 Helm 发布必须显式提供应用自己的
+  ASGI factory 与配置。
 - 同组织内部的细粒度业务授权仍由应用实现；Gaia 不会自动推导客户的业务规则。
 - 客户 Adapter 必须按声明的 `reconcilable`、`idempotent` 或 `at_most_once_manual` 恢复策略实现。
 - Dev Console 是开发工具，不随生产应用部署，也不能作为客户业务前台。

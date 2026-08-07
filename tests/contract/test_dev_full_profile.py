@@ -87,6 +87,8 @@ def test_dev_full_compose_adds_hr_and_gaia_redis_to_production_like_stack() -> N
     assert services["hr-api"]["environment"]["GAIA_DEVTOOLS_ENABLED"] == "true"
     assert services["hr-frontend"]["environment"]["VITE_GAIA_RUN_MODE"] == "sandbox"
     assert "--base /hr/" in services["hr-frontend"]["command"][-1]
+    assert services["worker-a"]["command"][-1] == "examples.function_task.app:build"
+    assert services["worker-b"]["command"][-1] == "examples.function_task.app:build"
 
 
 def test_dev_full_gateway_uses_proxy_safe_canonical_paths() -> None:

@@ -5,6 +5,7 @@ from __future__ import annotations
 import subprocess
 import tempfile
 from pathlib import Path
+from zipfile import ZipFile
 
 ROOT = Path(__file__).parents[1]
 
@@ -23,6 +24,10 @@ def main() -> None:
 
         run("uv", "build", "--out-dir", str(dist))
         wheel = next(dist.glob("gaia_framework-*.whl"))
+        with ZipFile(wheel) as archive:
+            shipped = archive.namelist()
+        if any(path.startswith("examples/") for path in shipped):
+            raise RuntimeError("Gaia wheel must not ship repository example applications")
         run("uv", "venv", str(environment))
         python = environment / "bin" / "python"
         gaia = environment / "bin" / "gaia"

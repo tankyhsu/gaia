@@ -43,4 +43,5 @@ uv run gaia check --config gaia.yaml
 
 需要人工确认时返回 Gaia HumanGate 契约，由 Temporal Workflow 等待 Update；需要恢复时依赖
 Temporal History 与 Activity Retry，不要在应用内另建恢复扫描器。完整、可运行的接入参考是
-`examples/controlled_task`，Worker 使用 `gaia worker --config ... --app ...` 启动。
+`examples/function_task`，Worker 使用 `gaia worker --config ... --app ...` 启动。仓库中的
+`examples/controlled_task` 只保留为 Runtime 黄金回归夹具，不是新应用模板。

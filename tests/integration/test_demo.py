@@ -4,10 +4,10 @@
 through human approval and completed, and something that was refused. A demo
 nobody runs would go stale exactly the way `make attack-demo` guards against
 in `test_attack_demo.py` -- so this test exercises `scripts/demo.py`'s own
-seeding function (`seed_demo_runs`), in-process, against the real
-`controlled-task` reference scenario also used by `make dev-api`. A change
-that alters that scenario's shape (a renamed resource, a rule that now
-produces a different outcome, a write that no longer requires approval) fails
+seeding function (`seed_demo_runs`) against the minimal `function_task`
+reference application also used by `make dev-api`. A change that alters that
+application's shape (a renamed scenario or a write that no longer requires
+approval) fails
 the ordinary test suite here instead of only being noticed the next time
 someone happens to run the demo by hand.
 
@@ -134,6 +134,17 @@ def test_hr_frontend_receives_console_return_url(monkeypatch: pytest.MonkeyPatch
 
     assert env["VITE_GAIA_CONSOLE_URL"] == "http://127.0.0.1:4180/"
     assert env["EXISTING_SETTING"] == "preserved"
+
+
+def test_demo_services_can_import_the_repository_only_reference_app() -> None:
+    demo = _load_demo()
+    try:
+        environment = demo._demo_service_environment()
+    finally:
+        sys.modules.pop("gaia_demo_script", None)
+
+    assert environment["GAIA_PROJECT_ROOT"] == str(demo.ROOT)
+    assert environment["PYTHONPATH"].split(":")[0] == str(demo.ROOT)
 
 
 def test_console_env_points_at_live_docs_url_when_docs_start() -> None:

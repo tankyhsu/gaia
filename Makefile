@@ -1,5 +1,7 @@
 PYTHON := uv run python
 PYTEST_MARKS := not postgres and not redis and not external
+GAIA_DEV_CONFIG ?= examples/function_task/gaia.yaml
+GAIA_DEV_APP ?= examples.function_task.app:build
 
 .PHONY: setup hooks-install hooks-status change-start change-status agent-check change-ready lint test test-services \
 	web-build web-test docs contracts package-smoke verify dev-api dev-console dev-docs \
@@ -100,8 +102,8 @@ dev-full:
 dev-full-external:
 	@test -n "$$DEEPSEEK_API_KEY" || \
 		(echo "DEEPSEEK_API_KEY is required for the dev-full profile" >&2; exit 1)
-	@test -n "$$GAIA_CONFIG_FILE" -a -n "$$HR_GAIA_CONFIG_FILE" || \
-		(echo "GAIA_CONFIG_FILE and HR_GAIA_CONFIG_FILE are required" >&2; exit 1)
+	@test -n "$$GAIA_CONFIG_FILE" -a -n "$$GAIA_APP_FACTORY" -a -n "$$HR_GAIA_CONFIG_FILE" || \
+		(echo "GAIA_CONFIG_FILE, GAIA_APP_FACTORY, and HR_GAIA_CONFIG_FILE are required" >&2; exit 1)
 	$(DEV_FULL_EXTERNAL_COMPOSE) $(GAIA_MANAGED_PROFILES) up --build -d --wait
 	@printf '%s\n' "Development gateway: http://127.0.0.1:4181/"
 
@@ -113,8 +115,8 @@ prod-up:
 	$(PROD_COMPOSE) up --build -d --wait
 
 prod-up-external:
-	@test -n "$$GAIA_CONFIG_FILE" || \
-		(echo "GAIA_CONFIG_FILE is required" >&2; exit 1)
+	@test -n "$$GAIA_CONFIG_FILE" -a -n "$$GAIA_APP_FACTORY" || \
+		(echo "GAIA_CONFIG_FILE and GAIA_APP_FACTORY are required" >&2; exit 1)
 	$(PROD_EXTERNAL_COMPOSE) $(GAIA_MANAGED_PROFILES) up --build -d --wait
 
 prod-acceptance:
@@ -129,15 +131,18 @@ dev-api:
 	GAIA_API_KEY=$${GAIA_API_KEY:-gaia-dev-key} \
 	GAIA_DEVTOOLS_ENABLED=$${GAIA_DEVTOOLS_ENABLED:-true} \
 	GAIA_PROJECT_ROOT=$${GAIA_PROJECT_ROOT:-$(CURDIR)} \
-	uv run uvicorn examples.controlled_task.app:create_app --factory --reload
+	PYTHONPATH=$(CURDIR)$${PYTHONPATH:+:$$PYTHONPATH} \
+	GAIA_CONFIG_PATH=$(GAIA_DEV_CONFIG) \
+	uv run uvicorn $(GAIA_DEV_APP) --factory --reload
 
 dev-worker:
 	GAIA_API_KEY=$${GAIA_API_KEY:-gaia-dev-key} \
 	GAIA_DEVTOOLS_ENABLED=$${GAIA_DEVTOOLS_ENABLED:-true} \
 	GAIA_PROJECT_ROOT=$${GAIA_PROJECT_ROOT:-$(CURDIR)} \
+	PYTHONPATH=$(CURDIR)$${PYTHONPATH:+:$$PYTHONPATH} \
 	uv run gaia worker \
-		--config examples/controlled_task/gaia.yaml \
-		--app examples.controlled_task.app:create_app
+		--config $(GAIA_DEV_CONFIG) \
+		--app $(GAIA_DEV_APP)
 
 dev-console:
 	GAIA_API_KEY=$${GAIA_API_KEY:-gaia-dev-key} \

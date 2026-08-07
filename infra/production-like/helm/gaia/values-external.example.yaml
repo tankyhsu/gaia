@@ -2,6 +2,10 @@
 # services and the public business ingress.
 console:
   enabled: false
+api:
+  appFactory: my_application.app:create_app
+worker:
+  appFactory: my_application.app:create_app
 ingress:
   enabled: false
 secrets:

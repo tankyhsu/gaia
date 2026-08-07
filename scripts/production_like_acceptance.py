@@ -91,15 +91,15 @@ def create_approval_run(client: httpx.Client) -> dict[str, Any]:
         "/v1/runs",
         headers={**HEADERS, "Idempotency-Key": f"prod-{uuid.uuid4()}"},
         json={
-            "scenario_id": "controlled-task",
+            "scenario_id": "function_task.request_publish",
             "mode": "sandbox",
             "user": {
                 "id": "production-like-operator",
-                "organization": "org-alpha",
-                "roles": ["operator"],
+                "organization": "production-like",
+                "roles": ["user"],
             },
             "request": {
-                "text": "pause res-001 because production-like recovery test",
+                "text": "production-like-recovery-widget",
             },
         },
     )

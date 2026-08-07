@@ -37,7 +37,8 @@ make demo
 
 ## 日常框架开发
 
-`examples/controlled_task/gaia.yaml` 使用 Temporal。按下面顺序分别启动长期进程：
+`examples/function_task/gaia.yaml` 使用 Temporal，并通过公开的 Scenario/Tool 装配路径运行。按下面
+顺序分别启动长期进程：
 
 ```bash
 # 终端 1：本地 Temporal Server
@@ -88,4 +89,5 @@ make dev-full
 
 正式 customer 环境使用 Helm/Kubernetes。Gaia Chart 默认只部署 Gaia 拥有的 API、Worker、
 迁移和 Temporal bootstrap 工作负载；PostgreSQL、Temporal、Langfuse、Ingress 与凭据生命周期
-由企业平台负责。具体操作见仓库内 `infra/production-like/helm/README.md`。
+由企业平台负责。Chart 不携带默认业务应用，发布时必须显式提供 API/Worker 的 application
+factory 和应用自己的 Gaia 配置。具体操作见仓库内 `infra/production-like/helm/README.md`。

@@ -35,5 +35,7 @@ a production credential or deployment template.
 
 For a hybrid enterprise setup, point `GAIA_CONFIG_FILE` and
 `HR_GAIA_CONFIG_FILE` at configs containing existing service addresses, set
+`GAIA_APP_FACTORY` to the application-owned ASGI factory, select
 `GAIA_MANAGED_PROFILES` only for missing components, and run
-`make dev-full-external`.
+`make dev-full-external`. Gaia never substitutes a repository example when the
+application factory is missing.

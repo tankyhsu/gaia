@@ -1,6 +1,6 @@
 """Reference scenarios for the `function_task` example.
 
-Four handlers, all plain business logic:
+Five handlers, all plain business logic:
 
 - `function_task.inspect_resource` is read-only: it calls a read tool and returns a
   mapping. No model call, no approval.
@@ -22,6 +22,8 @@ Four handlers, all plain business logic:
   `request_publish` but names a `continue_with` handler, so `notify_after_publish` (an
   `@continuation_handler`) runs automatically once the write is approved and executed,
   to show the declarative post-write-continuation path.
+- `function_task.reject_request` returns a rule-backed refusal without creating a
+  HumanGate, giving the standalone framework demo one honest blocked outcome.
 
 Everything about *how* the write gets authorized, persisted, and replayed after
 approval, and how the handoff/continuation routing table gets assembled, is the
@@ -34,12 +36,20 @@ from gaia import (
     ScenarioContext,
     ScenarioResponse,
     ScenarioSideEffect,
+    ScenarioTrace,
     agent_handler,
     continuation_handler,
     fingerprint,
     scenario,
 )
-from gaia.contracts.models import ApprovalView, RiskLevel, WriteMode
+from gaia.contracts.models import (
+    ActorType,
+    ApprovalView,
+    ErrorCode,
+    RiskLevel,
+    RunStatus,
+    WriteMode,
+)
 
 from . import tools
 from .tools import lookup_resource
@@ -54,6 +64,24 @@ async def inspect_resource(context: ScenarioContext) -> dict[str, object]:
     assert context.tools is not None
     looked_up = await context.tools.call(lookup_resource, resource_id=context.text)
     return {"resource_id": context.text, "status": looked_up.data["status"]}
+
+
+@scenario("function_task.reject_request", max_model_calls=0)
+async def reject_request(context: ScenarioContext) -> ScenarioResponse:
+    del context
+    return ScenarioResponse(
+        status=RunStatus.BLOCKED,
+        error_code=ErrorCode.FORBIDDEN,
+        trace=(
+            ScenarioTrace(
+                "apply_demo_policy",
+                actor=ActorType.RULE,
+                rule_refs=("RULE-FUNCTION-TASK-DENY",),
+            ),
+        ),
+        decision_step="apply_demo_policy",
+        decision_rule_refs=("RULE-FUNCTION-TASK-DENY",),
+    )
 
 
 @scenario(

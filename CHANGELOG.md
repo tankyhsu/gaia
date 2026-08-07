@@ -4,6 +4,14 @@ All notable user-visible Gaia changes are recorded here.
 
 ## Unreleased
 
+- Decouple the synthetic `controlled-task` golden scenario from Gaia's distributable and default
+  delivery paths. Wheels now contain only the framework package; OpenAPI is generated from the
+  application-neutral API; the runtime image has no business application command; local Demo,
+  development, Compose acceptance, and dev-full use the public `function_task` authoring path; and
+  Helm/external Compose require an application-owned factory explicitly. The original ten-case
+  scenario remains repository-only as a Runtime regression fixture. OrbStack deployment also
+  restores its standalone Langfuse object-store replica before end-to-end trace verification.
+
 - Add a shared two-color vector mark to the repository homepage, MkDocs header and favicon, and
   Dev Console navigation and favicon, replacing the Console's generic package icon with Gaia's own
   controlled-execution identity.

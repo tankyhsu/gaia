@@ -22,4 +22,6 @@ RUN uv sync --frozen --no-dev \
 USER 65532:65532
 EXPOSE 8000
 
-CMD ["uvicorn", "examples.controlled_task.app:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000"]
+# This is an application runtime image, not a preconfigured Gaia product.
+# Deployments must provide their own API or Worker command and application factory.
+CMD ["gaia", "--help"]
